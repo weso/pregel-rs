@@ -86,7 +86,6 @@ impl<L: Literal> Pregel<L> {
         col(&*Pregel::<L>::alias(MSG, column_name))
     }
 
-
     pub fn run(self) -> DataFrame {
         let (send_messages_ids, send_messages_msg) = match self.send_messages  {
             (send_messages_ids, send_messages_msg) =>
@@ -97,9 +96,10 @@ impl<L: Literal> Pregel<L> {
         };
         // We start the execution of the algorithm from the super-step 0; that is, all the nodes
         // are set to active, and the initial messages are sent to each vertex in the graph
-        let current_vertices = self
+        let mut current_vertices = self
             .graph
             .vertices
+            .clone()
             .lazy()
             .with_column(lit( self.initial_message).alias("aux"))
             .collect()
@@ -131,11 +131,25 @@ impl<L: Literal> Pregel<L> {
             let message_df = triplets_df
                 .with_columns(vec![send_messages_ids.clone(), send_messages_msg.clone()])
                 .filter(Pregel::<L>::msg(ID).is_not_null())
-                .groupby([col(ID)])
+                .groupby([col(&*Self::alias(MSG, ID))])
                 .agg([self.aggregate_messages.clone().alias(PREGEL_MESSAGE_COL_NAME)]);
-            println!("{}", message_df.collect().unwrap());
             // 2. Compute the new values for the vertices
+            let vertices_with_messages = current_vertices
+                .clone()
+                .lazy()
+                .join(message_df, [col(ID)], [Self::msg(ID)], JoinType::Left)
+                .select([all()]);
             // 3. Send messages to the neighboring nodes
+            current_vertices = self
+                .graph
+                .vertices
+                .clone()
+                .lazy()
+                .join(vertices_with_messages, [col(ID)], [col(ID)], JoinType::Left)
+                .collect()
+                .unwrap(); // TODO: remove this?
+
+            println!("{}", current_vertices);
 
             iteration += 1; // increment the counter so we now which iteration is being executed
         }

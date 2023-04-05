@@ -2,7 +2,7 @@ mod graph_frame;
 mod pregel;
 
 use polars::prelude::*;
-use crate::graph_frame::GraphFrame;
+use crate::graph_frame::{GraphFrame, MSG};
 use crate::pregel::{Pregel, PregelBuilder};
 
 fn main() {
@@ -19,6 +19,8 @@ fn main() {
         .max_iterations(2)
         .initial_message(0)
         .send_messages(Pregel::<i32>::src("aux") + lit(1))
+        .aggregate_messages(sum(&*Pregel::<i32>::alias(MSG, MSG)))
         .build();
+
     println!("{}", pregel.run());
 }
