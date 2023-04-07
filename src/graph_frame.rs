@@ -9,8 +9,8 @@ pub const EDGE: &str = "edge";
 pub const MSG: &str = "msg";
 
 pub struct GraphFrame {
-    pub vertices: LazyFrame,
-    pub edges: LazyFrame
+    pub vertices: DataFrame,
+    pub edges: DataFrame
 }
 
 type Result<T> = std::result::Result<T, GraphFrameError>;
@@ -85,30 +85,30 @@ impl GraphFrame {
 
         Ok(
             GraphFrame {
-                vertices: vertices.lazy(),
-                edges: edges.lazy()
+                vertices: vertices,
+                edges: edges
             }
         )
     }
 
-    pub fn from_edges(edges: DataFrame) -> Result<Self> {
-        let srcs = edges.clone().lazy().select([col(SRC).alias(ID)]);
-        let dsts = edges.clone().lazy().select([col(DST).alias(ID)]);
+    pub fn from_edges(edges: &DataFrame) -> Result<Self> { // TODO: borrow?
+        let srcs = edges.lazy().select([col(SRC).alias(ID)]);
+        let dsts = edges.lazy().select([col(DST).alias(ID)]);
         let vertices_lf = concat([srcs, dsts], false, true)?
             .unique(Some(vec!["id".to_string()]), UniqueKeepStrategy::First);
         let vertices = vertices_lf.collect()?;
 
-        GraphFrame::new(vertices, edges.clone())
+        GraphFrame::new(vertices, edges)
     }
 
-    pub fn out_degrees(self) -> LazyFrame {
+    pub fn out_degrees(self) -> DataFrame {
         self
             .edges
             .groupby([col(SRC).alias(ID)])
             .agg([count().alias("out_degree")])
     }
 
-    pub fn in_degrees(self) -> LazyFrame {
+    pub fn in_degrees(self) -> DataFrame {
         self
             .edges
             .groupby([col(DST)])
@@ -119,15 +119,7 @@ impl GraphFrame {
 
 impl Display for GraphFrame {
 
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let vertices = match self.vertices.clone().collect() { // TODO: explain why this is just fine
-            Ok(vertices) => vertices,
-            Err(error) => return std::fmt::Display::fmt(&error, f),
-        };
-        let edges = match self.edges.clone().collect() {
-            Ok(edges) => edges,
-            Err(error) => return std::fmt::Display::fmt(&error, f),
-        };
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {        
         write!(f, "Vertices: {}\nEdges: {}", vertices, edges)
     }
 
