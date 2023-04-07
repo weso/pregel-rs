@@ -103,6 +103,10 @@ impl Pregel {
         format!("{}.{}", df, column_name)
     }
 
+    fn prefix_columns(expr: Expr, prefix: &'static str) -> Expr {
+        expr.map_alias(|column_name| Ok(Self::alias(prefix, column_name)))
+    }
+
     pub fn src(column_name: &str) -> Expr {
         col(&Pregel::alias(SRC, column_name))
     }
@@ -134,6 +138,7 @@ impl Pregel {
             .graph
             .vertices
             .clone()
+            .lazy()
             .select(vec![all(), self.initial_message.alias(self.vertex_column)])
             .collect()
         {
@@ -143,7 +148,8 @@ impl Pregel {
         let edges = self
             .graph
             .edges
-            .select([all().map_alias(|column_name| Ok(Self::alias(EDGE, column_name)))]); // TODO: set this as a function
+            .lazy()
+            .select([Self::prefix_columns(all(), EDGE)]);
         // After computing the super-step 0, we start the execution of the Pregel algorithm. This
         // execution is performed until all the nodes vote to halt, or the number of iterations is
         // greater than the maximum number of iterations set by the user at the initialization of
@@ -155,35 +161,33 @@ impl Pregel {
             let triplets_df = current_vertices
                 .clone()
                 .lazy()
-                .select([all().map_alias(|column_name| Ok(Self::alias(SRC, column_name)))])
+                .select([Self::prefix_columns(all(), SRC)])
                 .inner_join(edges.clone(), Self::src(ID), Self::edge(SRC))
                 .inner_join(
-                    current_vertices
-                        .clone()
-                        .lazy()
-                        .select([all().map_alias(|column_name| Ok(Self::alias(DST, column_name)))]), // TODO: set this as a function
+                    current_vertices.clone().lazy().select([Self::prefix_columns(all(), DST)]),
                     Self::edge(DST),
                     Self::dst(ID)
                 );
             // 1. Generate the messages for the current iteration
             let message_df = triplets_df
-                .select(vec![send_messages_ids.clone(), send_messages_msg.clone().alias(PREGEL_MESSAGE_COL_NAME)])
+                .select(vec![send_messages_ids.clone(), send_messages_msg.clone().alias(PREGEL_MESSAGE_COL_NAME)]) // TODO: can this be improved?
                 .select(vec![Self::msg(Some(ID)), Self::msg(None)])
                 .filter(Pregel::msg(None).is_not_null())
                 .groupby([Self::msg(Some(ID))])
-                .agg([self.aggregate_messages.clone().alias(PREGEL_MESSAGE_COL_NAME)]);
+                .agg([self.aggregate_messages.clone().alias(PREGEL_MESSAGE_COL_NAME)]); // TODO: can this be improved?
             // 2. Compute the new values for the vertices
             let vertex_columns = current_vertices
                 .clone()
                 .lazy()
                 .outer_join(message_df, col(ID), Self::msg(Some(ID)))
-                .select(vec![col(ID), self.v_prog.clone().alias(self.vertex_column)]); // TODO: fix this move: previous iteration of the loop
+                .select(vec![col(ID), self.v_prog.clone().alias(self.vertex_column)]); // TODO: fix this move: previous iteration of the loop. Improve?
             // 3. Send messages to the neighboring nodes. Note that we have to materialize the
             // DataFrame so the stack is does not end up overflowed
             current_vertices = match self
                 .graph
                 .vertices
                 .clone()
+                .lazy()
                 .inner_join(vertex_columns, col(ID), col(ID))
                 .collect()
             {

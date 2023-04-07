@@ -54,7 +54,12 @@ impl Display for MissingColumnError {
 
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         let message = |df, column|
-            format!("The vertices {} must contain a {} for the Graph to be created", df, column);
+            format!(
+                "The provided {} must contain a column named {} for the Graph to be created",
+                df,
+                column
+            );
+
         match self {
             MissingColumnError::Id =>  write!(f, "{}", message("vertices", ID)),
             MissingColumnError::Src => write!(f, "{}", message("edges", SRC)),
@@ -83,17 +88,12 @@ impl GraphFrame {
             return Err(GraphFrameError::MissingColumn(MissingColumnError::Dst));
         }
 
-        Ok(
-            GraphFrame {
-                vertices: vertices,
-                edges: edges
-            }
-        )
+        Ok(GraphFrame { vertices, edges })
     }
 
-    pub fn from_edges(edges: &DataFrame) -> Result<Self> { // TODO: borrow?
-        let srcs = edges.lazy().select([col(SRC).alias(ID)]);
-        let dsts = edges.lazy().select([col(DST).alias(ID)]);
+    pub fn from_edges(edges: DataFrame) -> Result<Self> {
+        let srcs = edges.clone().lazy().select([col(SRC).alias(ID)]);
+        let dsts = edges.clone().lazy().select([col(DST).alias(ID)]);
         let vertices_lf = concat([srcs, dsts], false, true)?
             .unique(Some(vec!["id".to_string()]), UniqueKeepStrategy::First);
         let vertices = vertices_lf.collect()?;
@@ -101,26 +101,30 @@ impl GraphFrame {
         GraphFrame::new(vertices, edges)
     }
 
-    pub fn out_degrees(self) -> DataFrame {
+    pub fn out_degrees(self) -> PolarsResult<DataFrame> {
         self
             .edges
+            .lazy()
             .groupby([col(SRC).alias(ID)])
             .agg([count().alias("out_degree")])
+            .collect()
     }
 
-    pub fn in_degrees(self) -> DataFrame {
+    pub fn in_degrees(self) -> PolarsResult<DataFrame> {
         self
             .edges
+            .lazy()
             .groupby([col(DST)])
             .agg([count().alias("in_degree")])
+            .collect()
     }
 
 }
 
 impl Display for GraphFrame {
 
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {        
-        write!(f, "Vertices: {}\nEdges: {}", vertices, edges)
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result { // TODO: beautify this :(
+        write!(f, "Vertices: {}\nEdges: {}", self.vertices, self.edges)
     }
 
 }

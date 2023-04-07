@@ -5,7 +5,7 @@ use polars::prelude::*;
 use crate::graph_frame::{DST, GraphFrame};
 use crate::pregel::{MessageReceiver, Pregel, PregelBuilder};
 
-fn main() {
+fn main() { // TODO: remove unwraps and clones :(
     let edges = df! [
         "src" => [0, 1, 1, 2, 2, 3],
         "dst" => [1, 0, 3, 1, 3, 2],
@@ -14,12 +14,11 @@ fn main() {
     let vertices = GraphFrame::from_edges(edges.clone())
         .unwrap()
         .out_degrees()
-        .collect()
         .unwrap();
 
+    let graph = GraphFrame::new(vertices.clone(), edges.clone()).unwrap();
     let alpha = 0.15;
     let num_vertices: f64 = vertices
-        .clone()
         .lazy()
         .select([count()])
         .collect()
@@ -28,8 +27,6 @@ fn main() {
         .unwrap()
         .sum()
         .unwrap();
-
-    let graph = GraphFrame::new(vertices, edges.clone()).unwrap();
 
     let pregel = PregelBuilder::new(graph)
         .max_iterations(4)
