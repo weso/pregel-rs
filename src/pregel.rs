@@ -169,7 +169,6 @@ impl Pregel {
                     Self::dst(ID)
                 );
             // 1. Generate the messages for the current iteration
-            println!("{}", triplets_df.clone().collect().unwrap());
             let message_df = triplets_df
                 .select(vec![send_messages_ids.clone(), send_messages_msg.clone().alias(PREGEL_MESSAGE_COL_NAME)]) // TODO: can this be improved?
                 .select(vec![Self::msg(Some(ID)), Self::msg(None)])

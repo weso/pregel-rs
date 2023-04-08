@@ -10,7 +10,7 @@ fn main() { // TODO: remove unwraps and clones :(
 
     let edges = df![
         "src" => [0, 1, 1, 2, 2, 3],
-        "dst" => [1, 0, 3, 1, 3, 1],
+        "dst" => [1, 0, 3, 1, 3, 2],
     ].unwrap();
 
     let pregel = PregelBuilder::new(GraphFrame::new(vertices, edges).unwrap())
