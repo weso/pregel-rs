@@ -1,12 +1,9 @@
-mod graph_frame;
-mod pregel;
-
 use polars::prelude::*;
-use crate::graph_frame::{DST, GraphFrame};
-use crate::pregel::{MessageReceiver, Pregel, PregelBuilder};
+use graph_rs::graph_frame::GraphFrame;
+use graph_rs::pregel::{MessageReceiver, Pregel, PregelBuilder};
 
 fn main() { // TODO: remove unwraps and clones :(
-    let edges = df! [
+    let edges = df![
         "src" => [0, 1, 1, 2, 2, 3],
         "dst" => [1, 0, 3, 1, 3, 2],
     ].unwrap();
