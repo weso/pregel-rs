@@ -4,8 +4,8 @@ use graph_rs::pregel::{MessageReceiver, Pregel, PregelBuilder};
 
 fn main() { // TODO: remove unwraps and clones :(
     let edges = df![
-        "src" => [0, 1, 1, 2, 2, 3],
-        "dst" => [1, 0, 3, 1, 3, 2],
+        "src" => [0, 0, 1, 2, 3, 4, 4, 4],
+        "dst" => [1, 2, 2, 3, 3, 1, 2, 3],
     ].unwrap();
 
     let vertices = GraphFrame::from_edges(edges.clone())
@@ -14,7 +14,7 @@ fn main() { // TODO: remove unwraps and clones :(
         .unwrap();
 
     let graph = GraphFrame::new(vertices.clone(), edges.clone()).unwrap();
-    let alpha = 0.15;
+    let damping_factor = 0.85;
     let num_vertices: f64 = vertices
         .lazy()
         .select([count()])
@@ -31,7 +31,7 @@ fn main() { // TODO: remove unwraps and clones :(
         .initial_message(lit(1.0 / num_vertices))
         .send_messages(MessageReceiver::Dst, Pregel::src("rank") / Pregel::src("out_degree"))
         .aggregate_messages(Pregel::msg(None).sum())
-        .v_prog(Pregel::msg(None) * Expr::from(1.0 - alpha) + Expr::from(alpha / num_vertices))
+        .v_prog(Pregel::msg(None) * lit(damping_factor) + lit((1.0 - damping_factor) / num_vertices))
         .build();
 
     println!("{}", pregel.run().unwrap());

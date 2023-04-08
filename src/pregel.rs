@@ -130,7 +130,7 @@ impl Pregel {
         let (send_messages_ids, send_messages_msg) = self.send_messages;
         let (send_messages_ids, send_messages_msg) = (
             send_messages_ids.alias(&Self::alias(MSG, ID)),
-            send_messages_msg.alias(&Self::alias(MSG, MSG))
+            send_messages_msg.alias(PREGEL_MESSAGE_COL_NAME)
         );
         // We start the execution of the algorithm from the super-step 0; that is, all the nodes
         // are set to active, and the initial messages are sent to each vertex in the graph
@@ -162,25 +162,36 @@ impl Pregel {
                 .clone()
                 .lazy()
                 .select([Self::prefix_columns(all(), SRC)])
-                .inner_join(edges.clone(), Self::src(ID), Self::edge(SRC))
                 .inner_join(
+                    edges.clone(),
+                    Self::src(ID),
+                    Self::edge(SRC)
+                ).inner_join(
                     current_vertices.clone().lazy().select([Self::prefix_columns(all(), DST)]),
                     Self::edge(DST),
                     Self::dst(ID)
                 );
             // 1. Generate the messages for the current iteration
             let message_df = triplets_df
-                .select(vec![send_messages_ids.clone(), send_messages_msg.clone().alias(PREGEL_MESSAGE_COL_NAME)]) // TODO: can this be improved?
-                .select(vec![Self::msg(Some(ID)), Self::msg(None)])
-                .filter(Pregel::msg(None).is_not_null())
+                .select(vec![send_messages_ids.clone(), send_messages_msg.clone()])
                 .groupby([Self::msg(Some(ID))])
-                .agg([self.aggregate_messages.clone().alias(PREGEL_MESSAGE_COL_NAME)]); // TODO: can this be improved?
-            // 2. Compute the new values for the vertices
+                .agg([self.aggregate_messages.clone()]);
+            // 2. Compute the new values for the vertices. Note that we have to check for possibly
+            // null values after performing the outer join. This is, columns where the join key does
+            // not exist in the source DataFrame.  In case we find any; for example, given a certain
+            // having no incoming edges, we have to replace the null value by 0, meaning the sum
+            // performed in the previous aggregation is 0, as no edges have as a destination such
+            // a vertex.
             let vertex_columns = current_vertices
                 .clone()
                 .lazy()
                 .outer_join(message_df, col(ID), Self::msg(Some(ID)))
-                .select(vec![col(ID), self.v_prog.clone().alias(self.vertex_column)]); // TODO: fix this move: previous iteration of the loop. Improve?
+                .with_column(
+                    when(Self::msg(None).is_null())
+                        .then(0)
+                        .otherwise(Self::msg(None))
+                        .alias(PREGEL_MESSAGE_COL_NAME)
+                ).select(vec![col(ID), self.v_prog.clone().alias(self.vertex_column)]); // TODO: fix this move: previous iteration of the loop. Improve?
             // 3. Send messages to the neighboring nodes. Note that we have to materialize the
             // DataFrame so the stack is does not end up overflowed
             current_vertices = match self
