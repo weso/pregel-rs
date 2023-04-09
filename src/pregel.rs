@@ -213,3 +213,86 @@ impl Pregel {
     }
 
 }
+
+#[cfg(test)]
+mod tests {
+    use std::error::Error;
+    use polars::prelude::*;
+    use crate::graph_frame::{GraphFrame, ID};
+    use crate::pregel::{MessageReceiver, Pregel};
+
+    fn pagerank_builder(iterations: u8) -> Result<Pregel, Box<dyn Error>> {
+        let edges = df![
+            "src" => [0, 0, 1, 2, 3, 4, 4, 4],
+            "dst" => [1, 2, 2, 3, 3, 1, 2, 3],
+        ]?;
+
+        let vertices = GraphFrame::from_edges(edges.clone())?.out_degrees()?;
+
+        let damping_factor = 0.85;
+        let num_vertices: f64 = vertices.column(ID)?.len() as f64;
+
+        Ok(
+            Pregel {
+                graph: GraphFrame::new(vertices, edges)?,
+                max_iterations: iterations,
+                vertex_column: "rank",
+                initial_message: lit(1.0 / num_vertices),
+                send_messages: (
+                    Pregel::edge(MessageReceiver::into(MessageReceiver::Dst)),
+                    Pregel::src("rank") / Pregel::src("out_degree")
+                ),
+                aggregate_messages: Pregel::msg(None).sum(),
+                v_prog: Pregel::msg(None) * lit(damping_factor) + lit((1.0 - damping_factor) / num_vertices),
+            }
+        )
+    }
+
+    fn agg_pagerank(pagerank: Pregel) -> Result<f64, String> {
+        let result = match pagerank.run() {
+            Ok(result) => result,
+            Err(_) => return Err(String::from("Error running the PageRank algorithm"))
+        };
+        let rank = match result.column("rank") {
+            Ok(rank) => rank,
+            Err(_) => return Err(String::from("Error retrieving the rank column from the DataFrame"))
+        };
+        let rank_f64 = match rank.f64() {
+            Ok(rank_f64) => rank_f64,
+            Err(_) => return Err(String::from("Error casting the rank column to f64"))
+        };
+
+        match rank_f64.sum() {
+            Some(aggregated_rank) => Ok(aggregated_rank),
+            None => Err(String::from("Error computing the aggregation of PageRank values")),
+        }
+    }
+
+    fn pagerank_test_helper(iterations: u8) -> Result<(), String> {
+        let pagerank = match pagerank_builder(iterations) {
+            Ok(pagerank) => pagerank,
+            Err(_) => return Err(String::from("Error building the Pregel algorithm :("))
+        };
+
+        let agg_pagerank = match agg_pagerank(pagerank) {
+            Ok(agg_pagerank) => agg_pagerank,
+            Err(error) => return Err(error),
+        };
+
+        if (agg_pagerank - 1.0).abs() < 10e-3 {
+            Ok(())
+        } else {
+            Err(String::from("The sum of the aggregated PageRank values should be 1"))
+        }
+    }
+
+    #[test]
+    fn pagerank_test() -> Result<(), String> {
+        pagerank_test_helper(1)?;
+        pagerank_test_helper(2)?;
+        pagerank_test_helper(3)?;
+
+        Ok(())
+    }
+
+}
