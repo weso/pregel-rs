@@ -91,12 +91,12 @@ impl GraphFrame {
         Ok(GraphFrame { vertices, edges })
     }
 
-    pub fn from_edges(edges: DataFrame) -> Result<Self> {
+    pub fn from_edges(edges: DataFrame) -> Result<Self> { // TODO: remove clones :(
         let srcs = edges.clone().lazy().select([col(SRC).alias(ID)]);
         let dsts = edges.clone().lazy().select([col(DST).alias(ID)]);
-        let vertices_lf = concat([srcs, dsts], false, true)?
-            .unique(Some(vec!["id".to_string()]), UniqueKeepStrategy::First);
-        let vertices = vertices_lf.collect()?;
+        let vertices = concat([srcs, dsts], false, true)?
+            .unique(Some(vec!["id".to_string()]), UniqueKeepStrategy::First)
+            .collect()?;
 
         GraphFrame::new(vertices, edges)
     }
