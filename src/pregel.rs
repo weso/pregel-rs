@@ -1,12 +1,52 @@
 use polars::prelude::*;
-use crate::graph_frame::{DST, EDGE, GraphFrame, ID, MSG, SRC};
+use crate::graph_frame::{GraphFrame};
 
-const PREGEL_MESSAGE_COL_NAME: &str = "_pregel_msg_";
+pub enum ColumnIdentifier {
+    Id,
+    Src,
+    Dst,
+    Edge,
+    Msg,
+    Pregel,
+    Custom(String),
+}
+
+impl From<String> for ColumnIdentifier {
+
+    fn from(value: String) -> Self  {
+        match &*value {
+            "id" => ColumnIdentifier::Id,
+            "src"          => ColumnIdentifier::Src,
+            "dst"          => ColumnIdentifier::Dst,
+            "edge"         => ColumnIdentifier::Edge,
+            "msg"          => ColumnIdentifier::Msg,
+            "_pregel_msg_" => ColumnIdentifier::Pregel,
+            _              => ColumnIdentifier::Custom(value),
+        }
+    }
+
+}
+
+impl AsRef<str> for ColumnIdentifier {
+
+    fn as_ref(&self) -> &str {
+        match self {
+            ColumnIdentifier::Id => "id",
+            ColumnIdentifier::Src => "src",
+            ColumnIdentifier::Dst => "dst",
+            ColumnIdentifier::Edge => "edge",
+            ColumnIdentifier::Msg => "msg",
+            ColumnIdentifier::Pregel => "_pregel_msg_",
+            ColumnIdentifier::Custom(id) => id,
+        }
+    }
+
+}
 
 pub struct Pregel {
     graph: GraphFrame,
     max_iterations: u8,
-    vertex_column:  &'static str,
+    vertex_column: ColumnIdentifier,
     initial_message: Expr,
     send_messages: (Expr, Expr),
     aggregate_messages: Expr,
@@ -16,7 +56,7 @@ pub struct Pregel {
 pub struct PregelBuilder {
     graph: GraphFrame,
     max_iterations: u8,
-    vertex_column:  &'static str,
+    vertex_column:  ColumnIdentifier,
     initial_message: Expr,
     send_messages: (Expr, Expr),
     aggregate_messages: Expr,
@@ -28,12 +68,12 @@ pub enum MessageReceiver {
     Dst
 }
 
-impl From<MessageReceiver> for &str {
+impl From<MessageReceiver> for ColumnIdentifier {
 
-    fn from(message_receiver: MessageReceiver) -> &'static str {
+    fn from(message_receiver: MessageReceiver) -> ColumnIdentifier {
         match message_receiver {
-            MessageReceiver::Src => SRC,
-            MessageReceiver::Dst => DST,
+            MessageReceiver::Src => ColumnIdentifier::Src,
+            MessageReceiver::Dst => ColumnIdentifier::Dst,
         }
     }
 
@@ -45,7 +85,7 @@ impl PregelBuilder {
         PregelBuilder {
             graph,
             max_iterations: 10,
-            vertex_column: "vertex_column",
+            vertex_column: ColumnIdentifier::Custom("aux".to_owned()),
             initial_message: Default::default(),
             send_messages: (Default::default(), Default::default()),
             aggregate_messages: Default::default(),
@@ -58,7 +98,7 @@ impl PregelBuilder {
         self
     }
 
-    pub fn with_vertex_column(mut self, vertex_column:  &'static str) -> Self {
+    pub fn with_vertex_column(mut self, vertex_column: ColumnIdentifier) -> Self {
         self.vertex_column = vertex_column;
         self
     }
@@ -69,7 +109,7 @@ impl PregelBuilder {
     }
 
     pub fn send_messages(mut self, to: MessageReceiver, send_messages: Expr) -> Self {
-        self.send_messages = (Pregel::edge(MessageReceiver::into(to)), send_messages); // TODO: is edge fine?
+        self.send_messages = (Pregel::edge(MessageReceiver::into(to)), send_messages);
         self
     }
 
@@ -99,38 +139,43 @@ impl PregelBuilder {
 
 impl Pregel {
 
-    fn alias(df: &str, column_name: &str) -> String {
-        format!("{}.{}", df, column_name)
+    fn alias(prefix: &ColumnIdentifier, column_name: ColumnIdentifier) -> String {
+        format!("{}.{}", prefix.as_ref(), column_name.as_ref())
     }
 
-    fn prefix_columns(expr: Expr, prefix: &'static str) -> Expr {
-        expr.map_alias(|column_name| Ok(Self::alias(prefix, column_name)))
+    fn prefix_columns(expr: Expr, prefix: &'static ColumnIdentifier) -> Expr {
+        expr.map_alias(
+            |column_name| {
+                let column_identifier = ColumnIdentifier::from(column_name.to_string());
+                Ok(Self::alias(prefix, column_identifier))
+            }
+        )
     }
 
-    pub fn src(column_name: &str) -> Expr {
-        col(&Pregel::alias(SRC, column_name))
+    pub fn src(column_name: ColumnIdentifier) -> Expr {
+        col(&Pregel::alias(&ColumnIdentifier::Src, column_name))
     }
 
-    pub fn dst(column_name: &str) -> Expr {
-        col(&Pregel::alias(DST, column_name))
+    pub fn dst(column_name: ColumnIdentifier) -> Expr {
+        col(&Pregel::alias(&ColumnIdentifier::Dst, column_name))
     }
 
-    pub fn edge(column_name: &str) -> Expr {
-        col(&Pregel::alias(EDGE, column_name))
+    pub fn edge(column_name: ColumnIdentifier) -> Expr {
+        col(&Pregel::alias(&ColumnIdentifier::Edge, column_name))
     }
 
-    pub fn msg(column_name: Option<&str>) -> Expr {
+    pub fn msg(column_name: Option<ColumnIdentifier>) -> Expr {
         match column_name {
-            None => col(PREGEL_MESSAGE_COL_NAME),
-            Some(column_name) => col(&Pregel::alias(MSG, column_name)),
+            None => col(ColumnIdentifier::Pregel.as_ref()),
+            Some(column_name) => col(&Pregel::alias(&ColumnIdentifier::Msg, column_name)),
         }
     }
 
     pub fn run(self) -> PolarsResult<DataFrame> {
         let (send_messages_ids, send_messages_msg) = self.send_messages;
         let (send_messages_ids, send_messages_msg) = (
-            send_messages_ids.alias(&Self::alias(MSG, ID)),
-            send_messages_msg.alias(PREGEL_MESSAGE_COL_NAME)
+            send_messages_ids.alias(&Self::alias(&ColumnIdentifier::Msg, ColumnIdentifier::Id)),
+            send_messages_msg.alias(ColumnIdentifier::Pregel.as_ref())
         );
         // We start the execution of the algorithm from the super-step 0; that is, all the nodes
         // are set to active, and the initial messages are sent to each vertex in the graph
@@ -139,7 +184,7 @@ impl Pregel {
             .vertices
             .clone()
             .lazy()
-            .select(vec![all(), self.initial_message.alias(self.vertex_column)])
+            .select(vec![all(), self.initial_message.alias(self.vertex_column.as_ref())])
             .collect()
         {
             Ok(current_vertices) => current_vertices,
@@ -149,7 +194,7 @@ impl Pregel {
             .graph
             .edges
             .lazy()
-            .select([Self::prefix_columns(all(), EDGE)]);
+            .select([Self::prefix_columns(all(), &ColumnIdentifier::Edge)]);
         // After computing the super-step 0, we start the execution of the Pregel algorithm. This
         // execution is performed until all the nodes vote to halt, or the number of iterations is
         // greater than the maximum number of iterations set by the user at the initialization of
@@ -161,20 +206,23 @@ impl Pregel {
             let triplets_df = current_vertices
                 .clone()
                 .lazy()
-                .select([Self::prefix_columns(all(), SRC)])
+                .select([Self::prefix_columns(all(), &ColumnIdentifier::Src)])
                 .inner_join(
                     edges.clone(),
-                    Self::src(ID),
-                    Self::edge(SRC)
+                    Self::src(ColumnIdentifier::Id),
+                    Self::edge(ColumnIdentifier::Src)
                 ).inner_join(
-                    current_vertices.clone().lazy().select([Self::prefix_columns(all(), DST)]),
-                    Self::edge(DST),
-                    Self::dst(ID)
+                    current_vertices
+                        .clone()
+                        .lazy()
+                        .select([Self::prefix_columns(all(), &ColumnIdentifier::Dst)]),
+                    Self::edge(ColumnIdentifier::Dst),
+                    Self::dst(ColumnIdentifier::Id)
                 );
             // 1. Generate the messages for the current iteration
             let message_df = triplets_df
                 .select(vec![send_messages_ids.clone(), send_messages_msg.clone()])
-                .groupby([Self::msg(Some(ID))])
+                .groupby([Self::msg(Some(ColumnIdentifier::Id))])
                 .agg([self.aggregate_messages.clone()]);
             // 2. Compute the new values for the vertices. Note that we have to check for possibly
             // null values after performing the outer join. This is, columns where the join key does
@@ -185,13 +233,19 @@ impl Pregel {
             let vertex_columns = current_vertices
                 .clone()
                 .lazy()
-                .outer_join(message_df, col(ID), Self::msg(Some(ID)))
-                .with_column(
+                .outer_join(
+                    message_df,
+                    col(ColumnIdentifier::Id.as_ref()),
+                    Self::msg(Some(ColumnIdentifier::Id))
+                ).with_column(
                     when(Self::msg(None).is_null())
                         .then(0)
                         .otherwise(Self::msg(None))
-                        .alias(PREGEL_MESSAGE_COL_NAME)
-                ).select(vec![col(ID), self.v_prog.clone().alias(self.vertex_column)]); // TODO: fix this move: previous iteration of the loop. Improve?
+                        .alias(ColumnIdentifier::Pregel.as_ref())
+                ).select( // TODO: fix this move: previous iteration of the loop. Improve?
+                vec![col(ColumnIdentifier::Id.as_ref()),
+                     self.v_prog.clone().alias(self.vertex_column.as_ref())]
+                );
             // 3. Send messages to the neighboring nodes. Note that we have to materialize the
             // DataFrame so the stack is does not end up overflowed
             current_vertices = match self
@@ -199,8 +253,11 @@ impl Pregel {
                 .vertices
                 .clone()
                 .lazy()
-                .inner_join(vertex_columns, col(ID), col(ID))
-                .collect()
+                .inner_join(
+                    vertex_columns,
+                    col(ColumnIdentifier::Id.as_ref()),
+                    col(ColumnIdentifier::Id.as_ref())
+                ).collect()
             {
                 Ok(current_vertices) => current_vertices,
                 Err(error) => return Err(error),
@@ -218,29 +275,30 @@ impl Pregel {
 mod tests {
     use std::error::Error;
     use polars::prelude::*;
-    use crate::graph_frame::{GraphFrame, ID};
+    use crate::graph_frame::{GraphFrame};
     use crate::pregel::{MessageReceiver, Pregel};
+    use crate::pregel::ColumnIdentifier::{Custom, Dst, Id, Src};
 
     fn pagerank_builder(iterations: u8) -> Result<Pregel, Box<dyn Error>> {
         let edges = df![
-            "src" => [0, 0, 1, 2, 3, 4, 4, 4],
-            "dst" => [1, 2, 2, 3, 3, 1, 2, 3],
+            Src.as_ref() => [0, 0, 1, 2, 3, 4, 4, 4],
+            Dst.as_ref() => [1, 2, 2, 3, 3, 1, 2, 3],
         ]?;
 
         let vertices = GraphFrame::from_edges(edges.clone())?.out_degrees()?;
 
         let damping_factor = 0.85;
-        let num_vertices: f64 = vertices.column(ID)?.len() as f64;
+        let num_vertices: f64 = vertices.column(Id.as_ref())?.len() as f64;
 
         Ok(
             Pregel {
                 graph: GraphFrame::new(vertices, edges)?,
                 max_iterations: iterations,
-                vertex_column: "rank",
+                vertex_column: Custom("rank".to_owned()),
                 initial_message: lit(1.0 / num_vertices),
                 send_messages: (
                     Pregel::edge(MessageReceiver::into(MessageReceiver::Dst)),
-                    Pregel::src("rank") / Pregel::src("out_degree")
+                    Pregel::src(Custom("rank".to_owned())) / Pregel::src(Custom("out_degree".to_owned()))
                 ),
                 aggregate_messages: Pregel::msg(None).sum(),
                 v_prog: Pregel::msg(None) * lit(damping_factor) + lit((1.0 - damping_factor) / num_vertices),
@@ -251,7 +309,9 @@ mod tests {
     fn agg_pagerank(pagerank: Pregel) -> Result<f64, String> {
         let result = match pagerank.run() {
             Ok(result) => result,
-            Err(_) => return Err(String::from("Error running the PageRank algorithm"))
+            Err(error) => {
+                println!("{}", error);
+                return Err(String::from("Error running the PageRank algorithm")); }
         };
         let rank = match result.column("rank") {
             Ok(rank) => rank,
@@ -264,14 +324,14 @@ mod tests {
 
         match rank_f64.sum() {
             Some(aggregated_rank) => Ok(aggregated_rank),
-            None => Err(String::from("Error computing the aggregation of PageRank values")),
+            None => { Err(String::from("Error computing the aggregation of PageRank values")) },
         }
     }
 
     fn pagerank_test_helper(iterations: u8) -> Result<(), String> {
         let pagerank = match pagerank_builder(iterations) {
             Ok(pagerank) => pagerank,
-            Err(_) => return Err(String::from("Error building the Pregel algorithm :("))
+            Err(_) => return Err(String::from("Error building the Pregel algorithm :(")),
         };
 
         let agg_pagerank = match agg_pagerank(pagerank) {

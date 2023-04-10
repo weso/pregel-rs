@@ -1,6 +1,11 @@
 [package]
 name = "graph-rs"
 version = "0.1.0"
+authors = [ "Ángel Iglesias Préstamo <angel.iglesias.prestamo@gmail.com>" ]
+description = "A Graph library written in Rust for implementing your own algorithms in a Pregel fashion"
+repository = "https://github.com/angelip2303/graph-rs"
+readme = "README.md"
+license = "GPL-3.0-or-later"
 edition = "2021"
 
 [dependencies]

@@ -1,12 +1,7 @@
 use std::{error, fmt};
 use std::fmt::{Debug, Display, Formatter};
 use polars::prelude::*;
-
-pub const ID: &str = "id";
-pub const SRC: &str = "src";
-pub const DST: &str = "dst";
-pub const EDGE: &str = "edge";
-pub const MSG: &str = "msg";
+use crate::pregel::ColumnIdentifier::{Custom, Dst, Id, Src};
 
 pub struct GraphFrame {
     pub vertices: DataFrame,
@@ -53,7 +48,7 @@ pub enum MissingColumnError {
 impl Display for MissingColumnError {
 
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        let message = |df, column|
+        let message = |df, column: &str|
             format!(
                 "The provided {} must contain a column named {} for the Graph to be created",
                 df,
@@ -61,9 +56,9 @@ impl Display for MissingColumnError {
             );
 
         match self {
-            MissingColumnError::Id =>  write!(f, "{}", message("vertices", ID)),
-            MissingColumnError::Src => write!(f, "{}", message("edges", SRC)),
-            MissingColumnError::Dst => write!(f, "{}", message("edges", DST)),
+            MissingColumnError::Id =>  write!(f, "{}", message("vertices", Id.as_ref())),
+            MissingColumnError::Src => write!(f, "{}", message("edges", Src.as_ref())),
+            MissingColumnError::Dst => write!(f, "{}", message("edges", Dst.as_ref())),
         }
     }
 
@@ -78,35 +73,46 @@ impl From<PolarsError> for GraphFrameError {
 impl GraphFrame {
 
     pub fn new(vertices: DataFrame, edges: DataFrame) -> Result<Self> {
-        if !vertices.get_column_names().contains(&ID) {
+        if !vertices.get_column_names().contains(&Id.as_ref()) {
             return Err(GraphFrameError::MissingColumn(MissingColumnError::Id));
         }
-        if !edges.get_column_names().contains(&SRC) {
+        if !edges.get_column_names().contains(&Src.as_ref()) {
             return Err(GraphFrameError::MissingColumn(MissingColumnError::Src));
         }
-        if !edges.get_column_names().contains(&DST) {
+        if !edges.get_column_names().contains(&Dst.as_ref()) {
             return Err(GraphFrameError::MissingColumn(MissingColumnError::Dst));
         }
 
         Ok(GraphFrame { vertices, edges })
     }
 
-    pub fn from_edges(edges: DataFrame) -> Result<Self> { // TODO: remove clones :(
-        let srcs = edges.clone().lazy().select([col(SRC).alias(ID)]);
-        let dsts = edges.clone().lazy().select([col(DST).alias(ID)]);
+    pub fn from_edges(edges: DataFrame) -> Result<Self> {
+        let srcs = edges
+            .clone()
+            .lazy()
+            .select([col(Src.as_ref()).alias(Id.as_ref())]);
+        let dsts = edges
+            .clone()
+            .lazy()
+            .select([col(Dst.as_ref()).alias(Id.as_ref())]);
         let vertices = concat([srcs, dsts], false, true)?
-            .unique(Some(vec!["id".to_string()]), UniqueKeepStrategy::First)
+            .unique(Some(vec![Id.as_ref().to_string()]), UniqueKeepStrategy::First)
             .collect()?;
 
         GraphFrame::new(vertices, edges)
     }
 
+    // pub fn from_duckdb() -> Result<Self> {
+    //
+    //     GraphFrame::new(vertices, edges)
+    // }
+
     pub fn out_degrees(self) -> PolarsResult<DataFrame> {
         self
             .edges
             .lazy()
-            .groupby([col(SRC).alias(ID)])
-            .agg([count().alias("out_degree")])
+            .groupby([col(Src.as_ref()).alias(Id.as_ref())])
+            .agg([count().alias(Custom("out_degree".to_owned()).as_ref())])
             .collect()
     }
 
@@ -114,8 +120,8 @@ impl GraphFrame {
         self
             .edges
             .lazy()
-            .groupby([col(DST)])
-            .agg([count().alias("in_degree")])
+            .groupby([col(Dst.as_ref())])
+            .agg([count().alias(Custom("in_degree".to_owned()).as_ref())])
             .collect()
     }
 
@@ -124,7 +130,12 @@ impl GraphFrame {
 impl Display for GraphFrame {
 
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result { // TODO: beautify this :(
-        write!(f, "Vertices: {}\nEdges: {}", self.vertices, self.edges)
+        write!(
+            f,
+            "*) VERTICES:{}\n*) EDGES:{}",
+            self.vertices,
+            self.edges
+        )
     }
 
 }
