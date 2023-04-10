@@ -1,6 +1,6 @@
-# `graph-rs`
+# `pregel-rs`
 
-`graph-rs` is a Graph processing library written in Rust that features
+`pregel-rs` is a Graph processing library written in Rust that features
 a Pregel-based Framework for implementing your own algorithms in a 
 message-passing fashion.
 
