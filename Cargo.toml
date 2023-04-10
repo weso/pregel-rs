@@ -1,12 +1,13 @@
 [package]
-name = "graph-rs"
+name = "pregel-rs"
 version = "0.1.0"
 authors = [ "Ángel Iglesias Préstamo <angel.iglesias.prestamo@gmail.com>" ]
 description = "A Graph library written in Rust for implementing your own algorithms in a Pregel fashion"
-repository = "https://github.com/angelip2303/graph-rs"
+repository = "https://github.com/angelip2303/pregel-rs"
 readme = "README.md"
 license = "GPL-3.0-or-later"
 edition = "2021"
 
 [dependencies]
+duckdb = { version = "0.7.1", features = ["bundled"] }
 polars = { version = "0.28.0", features = ["lazy"] }

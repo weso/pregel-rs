@@ -348,9 +348,9 @@ mod tests {
 
     #[test]
     fn pagerank_test() -> Result<(), String> {
-        pagerank_test_helper(1)?;
-        pagerank_test_helper(2)?;
-        pagerank_test_helper(3)?;
+        for i in 1..3 {
+            pagerank_test_helper(i)?;
+        }
 
         Ok(())
     }

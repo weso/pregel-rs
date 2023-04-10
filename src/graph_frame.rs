@@ -1,6 +1,11 @@
 use std::{error, fmt};
 use std::fmt::{Debug, Display, Formatter};
+use std::path::Path;
+use duckdb::{Connection};
+use duckdb::arrow::array::{Array, Int32Array};
+use duckdb::arrow::record_batch::RecordBatch;
 use polars::prelude::*;
+use polars::series::Series;
 use crate::pregel::ColumnIdentifier::{Custom, Dst, Id, Src};
 
 pub struct GraphFrame {
@@ -12,6 +17,7 @@ type Result<T> = std::result::Result<T, GraphFrameError>;
 
 #[derive(Debug)]
 pub enum GraphFrameError {
+    DuckDbError(&'static str),
     FromPolars(PolarsError),
     MissingColumn(MissingColumnError)
 }
@@ -20,8 +26,9 @@ impl Display for GraphFrameError {
 
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            GraphFrameError::FromPolars(error) => std::fmt::Display::fmt(error, f),
-            GraphFrameError::MissingColumn(error) => std::fmt::Display::fmt(error, f),
+            GraphFrameError::DuckDbError(error) => Display::fmt(error, f),
+            GraphFrameError::FromPolars(error) => Display::fmt(error, f),
+            GraphFrameError::MissingColumn(error) => Display::fmt(error, f),
         }
     }
 
@@ -31,6 +38,7 @@ impl error::Error for GraphFrameError {
 
     fn source(&self) -> Option<&(dyn error::Error + 'static)> {
         match *self {
+            GraphFrameError::DuckDbError(_) => None,
             GraphFrameError::FromPolars(ref e) => Some(e),
             GraphFrameError::MissingColumn(_) => None,
         }
@@ -102,10 +110,57 @@ impl GraphFrame {
         GraphFrame::new(vertices, edges)
     }
 
-    // pub fn from_duckdb() -> Result<Self> {
-    //
-    //     GraphFrame::new(vertices, edges)
-    // }
+    pub fn from_duckdb(path: &str) -> Result<Self> {
+        let database_path = match Path::new(path).try_exists() {
+            Ok(true) => Path::new(path),
+            Ok(false) => return Err(GraphFrameError::DuckDbError("The provided path does not exist")),
+            _ => return Err(GraphFrameError::DuckDbError("Cannot open a connection with the provided Database")),
+        };
+        let connection = match Connection::open(database_path) {
+            Ok(connection) => connection,
+            Err(_) => return Err(GraphFrameError::DuckDbError("Cannot connect to the provided Database")),
+        };
+
+        let mut statement = match connection.prepare( // TODO: include the rest of the entities
+            "select src_id, dst_id from edge"
+        ) {
+            Ok(statement) => statement,
+            Err(_) => return Err(GraphFrameError::DuckDbError("Cannot prepare the provided statement")),
+        };
+
+        let batches: Vec<RecordBatch> = match statement.query_arrow([]) {
+            Ok(arrow) => arrow.collect(),
+            Err(_) => return Err(GraphFrameError::DuckDbError("Error executing the Arrow query")),
+        };
+
+        let mut dataframe = DataFrame::default();
+        for batch in batches {
+            let src_id =  batch.column(0);
+            let src_dst = batch.column(1);
+
+            let srcs = Series::new(
+                Src.as_ref(),
+                src_id.as_any().downcast_ref::<Int32Array>().unwrap().values().to_vec()
+            );
+
+            let dsts = Series::new(
+                Dst.as_ref(),
+                src_dst.as_any().downcast_ref::<Int32Array>().unwrap().values().to_vec()
+            );
+
+            let tmp_dataframe = match DataFrame::new(vec![srcs, dsts]) {
+                Ok(tmp_dataframe) => tmp_dataframe,
+                Err(_) => return Err(GraphFrameError::DuckDbError("Error creating the DataFrame")),
+            };
+
+            dataframe = match dataframe.vstack(&tmp_dataframe) {
+                Ok(dataframe) => dataframe,
+                Err(_) => return Err(GraphFrameError::DuckDbError("Error stacking the DataFrames"))
+            };
+        }
+
+        GraphFrame::from_edges(dataframe)
+    }
 
     pub fn out_degrees(self) -> PolarsResult<DataFrame> {
         self
@@ -130,12 +185,7 @@ impl GraphFrame {
 impl Display for GraphFrame {
 
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result { // TODO: beautify this :(
-        write!(
-            f,
-            "*) VERTICES:{}\n*) EDGES:{}",
-            self.vertices,
-            self.edges
-        )
+        write!(f, "Vertices: {}\nEdges: {}", self.vertices, self.edges)
     }
 
 }

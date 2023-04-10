@@ -1,8 +1,8 @@
 use std::error::Error;
 use polars::prelude::*;
-use graph_rs::graph_frame::GraphFrame;
-use graph_rs::pregel::{MessageReceiver, Pregel, PregelBuilder};
-use graph_rs::pregel::ColumnIdentifier::{Custom, Dst, Id, Src};
+use pregel_rs::graph_frame::GraphFrame;
+use pregel_rs::pregel::{MessageReceiver, Pregel, PregelBuilder};
+use pregel_rs::pregel::ColumnIdentifier::{Custom, Dst, Id, Src};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let edges = df![
