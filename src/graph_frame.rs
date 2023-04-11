@@ -8,6 +8,16 @@ use std::fmt::{Debug, Display, Formatter};
 use std::path::Path;
 use std::{error, fmt};
 
+/// The `GraphFrame` type is a struct containing two `DataFrame` fields, `vertices`
+/// and `edges`.
+///
+/// Properties:
+///
+/// * `vertices`: The `vertices` property is a `DataFrame` that represents the nodes
+/// in a graph. It must contain a column named Id.
+///
+/// * `edges`: The `edges` property is a `DataFrame` that represents the edges of a
+/// graph. It must contain -- at least -- two columns: Src and Dst.
 pub struct GraphFrame {
     pub vertices: DataFrame,
     pub edges: DataFrame,
@@ -15,6 +25,9 @@ pub struct GraphFrame {
 
 type Result<T> = std::result::Result<T, GraphFrameError>;
 
+/// `GraphFrameError` is an enum that represents the different types of errors that
+/// can occur when working with a `GraphFrame`. It has three variants: `DuckDbError`,
+/// `FromPolars` and `MissingColumn`.
 #[derive(Debug)]
 pub enum GraphFrameError {
     DuckDbError(&'static str),
@@ -42,6 +55,9 @@ impl error::Error for GraphFrameError {
     }
 }
 
+/// `MissingColumnError` is an enum that represents errors that occur when a
+/// required column is missing from a DataFrame. The `Debug` trait allows for easy
+///  debugging of the enum by printing its values in a formatted way.
 #[derive(Debug)]
 pub enum MissingColumnError {
     Id,
@@ -73,6 +89,24 @@ impl From<PolarsError> for GraphFrameError {
 }
 
 impl GraphFrame {
+    /// The function creates a new GraphFrame object with given vertices and edges
+    /// DataFrames, checking for required columns.
+    ///
+    /// Arguments:
+    ///
+    /// * `vertices`: A DataFrame containing information about the vertices of the
+    /// graph, such as their IDs and attributes.
+    ///
+    /// * `edges`: A DataFrame containing information about the edges in the graph. It
+    /// should have columns named "src" and "dst" to represent the source and
+    /// destination vertices of each edge.
+    ///
+    /// Returns:
+    ///
+    /// a `Result<Self>` where `Self` is the `GraphFrame` struct. The `Ok` variant of
+    /// the `Result` contains an instance of `GraphFrame` initialized with the provided
+    /// `vertices` and `edges` DataFrames. If any of the required columns (`Id`, `Src`,
+    /// `Dst`) are missing in the DataFrames, the function returns an `Error`.
     pub fn new(vertices: DataFrame, edges: DataFrame) -> Result<Self> {
         if !vertices.get_column_names().contains(&Id.as_ref()) {
             return Err(GraphFrameError::MissingColumn(MissingColumnError::Id));
@@ -87,6 +121,20 @@ impl GraphFrame {
         Ok(GraphFrame { vertices, edges })
     }
 
+    /// This function creates a new `GraphFrame` from a given set of edges by selecting
+    /// source and destination vertices and concatenating them into a unique set of
+    /// vertices.
+    ///
+    /// Arguments:
+    ///
+    /// * `edges`: A DataFrame containing the edges of a graph, with at least two
+    /// columns named "src" and "dst" representing the source and destination vertices
+    /// of each edge.
+    ///
+    /// Returns:
+    ///
+    /// The `from_edges` function returns a `Result<Self>` where `Self` is the
+    /// `GraphFrame` struct.
     pub fn from_edges(edges: DataFrame) -> Result<Self> {
         let srcs = edges
             .clone()
@@ -106,6 +154,15 @@ impl GraphFrame {
         GraphFrame::new(vertices, edges)
     }
 
+    /// This function creates a `GraphFrame` from data stored in a DuckDB database.
+    ///
+    /// Arguments:
+    ///
+    /// * `path`: A string representing the path to a DuckDB database file.
+    ///
+    /// Returns:
+    ///
+    /// a `Result<Self>` where `Self` is the `GraphFrame` struct.
     pub fn from_duckdb(path: &str) -> Result<Self> {
         let database_path = match Path::new(path).try_exists() {
             Ok(true) => Path::new(path),
@@ -212,6 +269,17 @@ impl GraphFrame {
         GraphFrame::from_edges(dataframe)
     }
 
+    /// This function calculates the out-degree of each node in a graph represented by
+    /// its edges. The out-degree of a node is defined as the number of out-going edges;
+    /// that is, edges that have as a source the actual node, and as a destination any
+    /// other node in a directed-graph.
+    ///
+    /// Returns:
+    ///
+    /// This function returns a `Result` containing a `DataFrame`. The `DataFrame`
+    /// contains the out-degree of each node in the graph represented by the `Graph`
+    /// object. The original `DataFrame` is preserved; that is, we extend it with
+    /// the out-degrees of each node.
     pub fn out_degrees(self) -> PolarsResult<DataFrame> {
         self.edges
             .lazy()
@@ -220,6 +288,17 @@ impl GraphFrame {
             .collect()
     }
 
+    /// This function calculates the in-degree of each node in a graph represented by
+    /// its edges. The out-degree of a node is defined as the number of incoming edges;
+    /// that is, edges that have as a source any node, and as a destination the node
+    /// itself in a directed-graph.
+    ///
+    /// Returns:
+    ///
+    /// This function returns a `Result` containing a `DataFrame`. The `DataFrame`
+    /// contains the in-degree of each node in the graph represented by the `Graph`
+    /// object. The original `DataFrame` is preserved; that is, we extend it with
+    /// the in-degrees of each node.
     pub fn in_degrees(self) -> PolarsResult<DataFrame> {
         self.edges
             .lazy()

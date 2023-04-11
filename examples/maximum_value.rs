@@ -4,6 +4,14 @@ use pregel_rs::pregel::ColumnIdentifier::{Custom, Dst, Id, Src};
 use pregel_rs::pregel::{MessageReceiver, Pregel, PregelBuilder};
 use std::error::Error;
 
+/// This Rust function uses the Pregel algorithm to find the maximum value in a
+/// graph.
+///
+/// Returns:
+///
+/// The `main` function is returning a `Result` with an empty `Ok` value and a `Box`
+/// containing a `dyn Error` trait object. The `println!` macro is being used to
+/// print the result of the `pregel.run()` method call to the console.
 fn main() -> Result<(), Box<dyn Error>> {
     let edges = df![
         Src.as_ref() => [0, 1, 1, 2, 2, 3],
