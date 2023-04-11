@@ -1,16 +1,16 @@
-use std::{error, fmt};
-use std::fmt::{Debug, Display, Formatter};
-use std::path::Path;
-use duckdb::{Connection};
+use crate::pregel::ColumnIdentifier::{Custom, Dst, Id, Src};
 use duckdb::arrow::array::{Array, Int32Array};
 use duckdb::arrow::record_batch::RecordBatch;
+use duckdb::Connection;
 use polars::prelude::*;
 use polars::series::Series;
-use crate::pregel::ColumnIdentifier::{Custom, Dst, Id, Src};
+use std::fmt::{Debug, Display, Formatter};
+use std::path::Path;
+use std::{error, fmt};
 
 pub struct GraphFrame {
     pub vertices: DataFrame,
-    pub edges: DataFrame
+    pub edges: DataFrame,
 }
 
 type Result<T> = std::result::Result<T, GraphFrameError>;
@@ -19,11 +19,10 @@ type Result<T> = std::result::Result<T, GraphFrameError>;
 pub enum GraphFrameError {
     DuckDbError(&'static str),
     FromPolars(PolarsError),
-    MissingColumn(MissingColumnError)
+    MissingColumn(MissingColumnError),
 }
 
 impl Display for GraphFrameError {
-
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             GraphFrameError::DuckDbError(error) => Display::fmt(error, f),
@@ -31,11 +30,9 @@ impl Display for GraphFrameError {
             GraphFrameError::MissingColumn(error) => Display::fmt(error, f),
         }
     }
-
 }
 
 impl error::Error for GraphFrameError {
-
     fn source(&self) -> Option<&(dyn error::Error + 'static)> {
         match *self {
             GraphFrameError::DuckDbError(_) => None,
@@ -43,33 +40,30 @@ impl error::Error for GraphFrameError {
             GraphFrameError::MissingColumn(_) => None,
         }
     }
-
 }
 
 #[derive(Debug)]
 pub enum MissingColumnError {
     Id,
     Src,
-    Dst
+    Dst,
 }
 
 impl Display for MissingColumnError {
-
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        let message = |df, column: &str|
+        let message = |df, column: &str| {
             format!(
                 "The provided {} must contain a column named {} for the Graph to be created",
-                df,
-                column
-            );
+                df, column
+            )
+        };
 
         match self {
-            MissingColumnError::Id =>  write!(f, "{}", message("vertices", Id.as_ref())),
+            MissingColumnError::Id => write!(f, "{}", message("vertices", Id.as_ref())),
             MissingColumnError::Src => write!(f, "{}", message("edges", Src.as_ref())),
             MissingColumnError::Dst => write!(f, "{}", message("edges", Dst.as_ref())),
         }
     }
-
 }
 
 impl From<PolarsError> for GraphFrameError {
@@ -79,7 +73,6 @@ impl From<PolarsError> for GraphFrameError {
 }
 
 impl GraphFrame {
-
     pub fn new(vertices: DataFrame, edges: DataFrame) -> Result<Self> {
         if !vertices.get_column_names().contains(&Id.as_ref()) {
             return Err(GraphFrameError::MissingColumn(MissingColumnError::Id));
@@ -104,7 +97,10 @@ impl GraphFrame {
             .lazy()
             .select([col(Dst.as_ref()).alias(Id.as_ref())]);
         let vertices = concat([srcs, dsts], false, true)?
-            .unique(Some(vec![Id.as_ref().to_string()]), UniqueKeepStrategy::First)
+            .unique(
+                Some(vec![Id.as_ref().to_string()]),
+                UniqueKeepStrategy::First,
+            )
             .collect()?;
 
         GraphFrame::new(vertices, edges)
@@ -113,15 +109,28 @@ impl GraphFrame {
     pub fn from_duckdb(path: &str) -> Result<Self> {
         let database_path = match Path::new(path).try_exists() {
             Ok(true) => Path::new(path),
-            Ok(false) => return Err(GraphFrameError::DuckDbError("The provided path does not exist")),
-            _ => return Err(GraphFrameError::DuckDbError("Cannot open a connection with the provided Database")),
+            Ok(false) => {
+                return Err(GraphFrameError::DuckDbError(
+                    "The provided path does not exist",
+                ))
+            }
+            _ => {
+                return Err(GraphFrameError::DuckDbError(
+                    "Cannot open a connection with the provided Database",
+                ))
+            }
         };
         let connection = match Connection::open(database_path) {
             Ok(connection) => connection,
-            Err(_) => return Err(GraphFrameError::DuckDbError("Cannot connect to the provided Database")),
+            Err(_) => {
+                return Err(GraphFrameError::DuckDbError(
+                    "Cannot connect to the provided Database",
+                ))
+            }
         };
 
-        let mut statement = match connection.prepare( // TODO: include the rest of the entities
+        let mut statement = match connection.prepare(
+            // TODO: include the rest of the entities
             "select src_id, property_id, dst_id from edge
             union
             select src_id, property_id, dst_id from coordinate
@@ -130,36 +139,59 @@ impl GraphFrame {
             union
             select src_id, property_id, dst_id from string
             union
-            select src_id, property_id, dst_id from time"
+            select src_id, property_id, dst_id from time",
         ) {
             Ok(statement) => statement,
-            Err(_) => return Err(GraphFrameError::DuckDbError("Cannot prepare the provided statement")),
+            Err(_) => {
+                return Err(GraphFrameError::DuckDbError(
+                    "Cannot prepare the provided statement",
+                ))
+            }
         };
 
         let batches: Vec<RecordBatch> = match statement.query_arrow([]) {
             Ok(arrow) => arrow.collect(),
-            Err(_) => return Err(GraphFrameError::DuckDbError("Error executing the Arrow query")),
+            Err(_) => {
+                return Err(GraphFrameError::DuckDbError(
+                    "Error executing the Arrow query",
+                ))
+            }
         };
 
         let mut dataframe = DataFrame::default();
         for batch in batches {
-            let src_id =  batch.column(0); // TODO: by name?
-            let property_id =  batch.column(1);
+            let src_id = batch.column(0); // TODO: by name?
+            let property_id = batch.column(1);
             let src_dst = batch.column(2);
 
             let srcs = Series::new(
                 Src.as_ref(),
-                src_id.as_any().downcast_ref::<Int32Array>().unwrap().values().to_vec()
+                src_id
+                    .as_any()
+                    .downcast_ref::<Int32Array>()
+                    .unwrap()
+                    .values()
+                    .to_vec(),
             );
 
             let properties = Series::new(
                 Custom("property_id".to_string()).as_ref(),
-                property_id.as_any().downcast_ref::<Int32Array>().unwrap().values().to_vec()
+                property_id
+                    .as_any()
+                    .downcast_ref::<Int32Array>()
+                    .unwrap()
+                    .values()
+                    .to_vec(),
             );
 
             let dsts = Series::new(
                 Dst.as_ref(),
-                src_dst.as_any().downcast_ref::<Int32Array>().unwrap().values().to_vec()
+                src_dst
+                    .as_any()
+                    .downcast_ref::<Int32Array>()
+                    .unwrap()
+                    .values()
+                    .to_vec(),
             );
 
             let tmp_dataframe = match DataFrame::new(vec![srcs, properties, dsts]) {
@@ -169,7 +201,11 @@ impl GraphFrame {
 
             dataframe = match dataframe.vstack(&tmp_dataframe) {
                 Ok(dataframe) => dataframe,
-                Err(_) => return Err(GraphFrameError::DuckDbError("Error stacking the DataFrames"))
+                Err(_) => {
+                    return Err(GraphFrameError::DuckDbError(
+                        "Error stacking the DataFrames",
+                    ))
+                }
             };
         }
 
@@ -177,8 +213,7 @@ impl GraphFrame {
     }
 
     pub fn out_degrees(self) -> PolarsResult<DataFrame> {
-        self
-            .edges
+        self.edges
             .lazy()
             .groupby([col(Src.as_ref()).alias(Id.as_ref())])
             .agg([count().alias(Custom("out_degree".to_owned()).as_ref())])
@@ -186,20 +221,17 @@ impl GraphFrame {
     }
 
     pub fn in_degrees(self) -> PolarsResult<DataFrame> {
-        self
-            .edges
+        self.edges
             .lazy()
             .groupby([col(Dst.as_ref())])
             .agg([count().alias(Custom("in_degree".to_owned()).as_ref())])
             .collect()
     }
-
 }
 
 impl Display for GraphFrame {
-
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result { // TODO: beautify this :(
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        // TODO: beautify this :(
         write!(f, "Vertices: {}\nEdges: {}", self.vertices, self.edges)
     }
-
 }

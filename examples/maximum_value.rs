@@ -1,8 +1,8 @@
-use std::error::Error;
 use polars::prelude::*;
 use pregel_rs::graph_frame::GraphFrame;
-use pregel_rs::pregel::{MessageReceiver, Pregel, PregelBuilder};
 use pregel_rs::pregel::ColumnIdentifier::{Custom, Dst, Id, Src};
+use pregel_rs::pregel::{MessageReceiver, Pregel, PregelBuilder};
+use std::error::Error;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let edges = df![
@@ -19,9 +19,15 @@ fn main() -> Result<(), Box<dyn Error>> {
         .max_iterations(4)
         .with_vertex_column(Custom("max_value".to_owned()))
         .initial_message(col(Custom("value".to_owned()).as_ref()))
-        .send_messages(MessageReceiver::Dst, Pregel::src(Custom("max_value".to_owned())))
+        .send_messages(
+            MessageReceiver::Dst,
+            Pregel::src(Custom("max_value".to_owned())),
+        )
         .aggregate_messages(Pregel::msg(None).max())
-        .v_prog(max_exprs([col(Custom("max_value".to_owned()).as_ref()), Pregel::msg(None)]))
+        .v_prog(max_exprs([
+            col(Custom("max_value".to_owned()).as_ref()),
+            Pregel::msg(None),
+        ]))
         .build();
 
     Ok(println!("{}", pregel.run()?))
