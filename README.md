@@ -2,15 +2,82 @@
 
 `pregel-rs` is a Graph processing library written in Rust that features
 a Pregel-based Framework for implementing your own algorithms in a 
-message-passing fashion.
+message-passing fashion. It is designed to be efficient and scalable, 
+making it suitable for processing large-scale graphs.
 
-## Installation
+## Features
 
-TBD
+- _Pregel-based framework_: `pregel-rs` is a powerful graph processing model
+that allows users to implement graph algorithms in a message-passing fashion,
+where computation is performed on vertices and messages are passed along edges.
+`pregel-rs` provides a framework that makes it easy to implement graph 
+algorithms using this model.
 
-## Usage
+- _Rust-based implementation_: `pregel-rs` is implemented in Rust, a systems 
+programming language known for its safety, concurrency, and performance.
+Rust's strong type system and memory safety features help ensure that `pregel-rs`
+is robust and reliable.
 
-TBD
+- _Efficient and scalable_: `pregel-rs` designed to be efficient and scalable,
+making it suitable for processing large-scale graphs. It uses parallelism and
+optimization techniques to minimize computation and communication overhead,
+allowing it to handle graphs with millions or even billions of vertices and edges.
+For us to achieve this, we have built it on top of [polars](https://github.com/pola-rs/polars)
+a blazingly fast DataFrames library implemented in Rust using Apache Arrow
+Columnar Format as the memory model.
+
+- _Graph abstraction_: `pregel-rs` provides a graph abstraction that makes 
+it easy to represent and manipulate graphs in Rust. It supports both directed and
+undirected graphs, and provides methods for adding, removing, and querying vertices
+and edges.
+
+- _Customizable computation_: `pregel-rs` allows users to implement their own
+computation logic by defining vertex computation functions. This gives users the 
+flexibility to implement their own graph algorithms and customize the behavior
+of `pregel-rs` to suit their specific needs.
+
+## Getting started
+
+To get started with Pregel-rs, you can follow these steps:
+
+1. _Install Rust_: `pregel-rs` requires Rust to be installed on your system.
+You can install Rust by following the instructions on the official Rust website:
+https://www.rust-lang.org/tools/install
+
+2. _Create a new Rust project_: Once Rust is installed, you can create a new Rust
+project using the Cargo package manager, which is included with Rust. You can
+create a new project by running the following command in your terminal:
+
+```
+cargo new my_pregel_project
+```
+
+3. _Add `pregel-rs` as a dependency_: Next, you need to add `pregel-rs` as a 
+dependency in your `Cargo.toml` file, which is located in the root directory
+of your project. You can add the following line to your `Cargo.toml` file:
+
+```
+[dependencies]
+pregel-rs = "0.1.0"
+```
+
+4. _Implement your graph algorithm_: Now you can start implementing your graph
+algorithm using the `pregel-rs` framework. You can define your vertex computation
+functions and use the graph abstraction provided by `pregel-rs` to manipulate the graph.
+
+5. _Build and run your project_: Once you have implemented your graph algorithm, you
+can build and run your project using the Cargo package manager. You can build your
+project by running the following command in your terminal:
+
+```
+cargo build
+```
+
+And you can run your project by running the following command:
+
+```
+cargo run
+```
 
 ## Acknowledgments
 
