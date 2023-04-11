@@ -36,7 +36,7 @@ computation logic by defining vertex computation functions. This gives users the
 flexibility to implement their own graph algorithms and customize the behavior
 of `pregel-rs` to suit their specific needs.
 
-## Installation
+## Getting started
 
 To get started with Pregel-rs, you can follow these steps:
 
@@ -78,10 +78,6 @@ And you can run your project by running the following command:
 ```
 cargo run
 ```
-
-## Usage
-
-TBD
 
 ## Acknowledgments
 
