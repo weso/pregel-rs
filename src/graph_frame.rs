@@ -122,7 +122,15 @@ impl GraphFrame {
         };
 
         let mut statement = match connection.prepare( // TODO: include the rest of the entities
-            "select src_id, dst_id from edge"
+            "select src_id, property_id, dst_id from edge
+            union
+            select src_id, property_id, dst_id from coordinate
+            union
+            select src_id, property_id, dst_id from quantity
+            union
+            select src_id, property_id, dst_id from string
+            union
+            select src_id, property_id, dst_id from time"
         ) {
             Ok(statement) => statement,
             Err(_) => return Err(GraphFrameError::DuckDbError("Cannot prepare the provided statement")),
@@ -135,12 +143,18 @@ impl GraphFrame {
 
         let mut dataframe = DataFrame::default();
         for batch in batches {
-            let src_id =  batch.column(0);
-            let src_dst = batch.column(1);
+            let src_id =  batch.column(0); // TODO: by name?
+            let property_id =  batch.column(1);
+            let src_dst = batch.column(2);
 
             let srcs = Series::new(
                 Src.as_ref(),
                 src_id.as_any().downcast_ref::<Int32Array>().unwrap().values().to_vec()
+            );
+
+            let properties = Series::new(
+                Custom("property_id".to_string()).as_ref(),
+                property_id.as_any().downcast_ref::<Int32Array>().unwrap().values().to_vec()
             );
 
             let dsts = Series::new(
@@ -148,7 +162,7 @@ impl GraphFrame {
                 src_dst.as_any().downcast_ref::<Int32Array>().unwrap().values().to_vec()
             );
 
-            let tmp_dataframe = match DataFrame::new(vec![srcs, dsts]) {
+            let tmp_dataframe = match DataFrame::new(vec![srcs, properties, dsts]) {
                 Ok(tmp_dataframe) => tmp_dataframe,
                 Err(_) => return Err(GraphFrameError::DuckDbError("Error creating the DataFrame")),
             };
