@@ -310,7 +310,10 @@ impl GraphFrame {
 
 impl Display for GraphFrame {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        // TODO: beautify this :(
-        write!(f, "Vertices: {}\nEdges: {}", self.vertices, self.edges)
+        write!(
+            f,
+            "GraphFrame:\nVertices:\n{}\nEdges:\n{}",
+            self.vertices, self.edges
+        )
     }
 }
