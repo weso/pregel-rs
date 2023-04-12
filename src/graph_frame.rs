@@ -317,3 +317,59 @@ impl Display for GraphFrame {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::graph_frame::GraphFrame;
+    use polars::prelude::*;
+
+    #[test]
+    fn test_from_edges() {
+        let srcs = Series::new("src", [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+        let dsts = Series::new("dst", [2, 3, 4, 5, 6, 7, 8, 9, 10, 1]);
+        let edges = DataFrame::new(vec![srcs, dsts]).unwrap();
+        let graphframe = GraphFrame::from_edges(edges).unwrap();
+        assert_eq!(graphframe.vertices.height(), 10);
+        assert_eq!(graphframe.edges.height(), 10);
+    }
+
+    #[test]
+    fn test_in_degree() {
+        let srcs = Series::new("src", [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+        let dsts = Series::new("dst", [2, 3, 4, 5, 6, 7, 8, 9, 10, 1]);
+        let edges = DataFrame::new(vec![srcs, dsts]).unwrap();
+        let graphframe = GraphFrame::from_edges(edges).unwrap();
+        let in_degree = graphframe.in_degrees().unwrap();
+        assert_eq!(in_degree.height(), 10);
+        assert_eq!(
+            in_degree
+                .column("in_degree")
+                .unwrap()
+                .u32()
+                .unwrap()
+                .sum()
+                .unwrap(),
+            10
+        );
+    }
+
+    #[test]
+    fn test_out_degree() {
+        let srcs = Series::new("src", [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+        let dsts = Series::new("dst", [2, 3, 4, 5, 6, 7, 8, 9, 10, 1]);
+        let edges = DataFrame::new(vec![srcs, dsts]).unwrap();
+        let graphframe = GraphFrame::from_edges(edges).unwrap();
+        let out_degree = graphframe.out_degrees().unwrap();
+        assert_eq!(out_degree.height(), 10);
+        assert_eq!(
+            out_degree
+                .column("out_degree")
+                .unwrap()
+                .u32()
+                .unwrap()
+                .sum()
+                .unwrap(),
+            10
+        );
+    }
+}

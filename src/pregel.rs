@@ -68,7 +68,7 @@ impl AsRef<str> for ColumnIdentifier {
 ///
 /// * `send_messages`: `send_messages` is a tuple containing two expressions. The
 /// first expression represents the message sending function that determines whether
-/// the message will go from Src to Dst or viceversa. The second expression
+/// the message will go from Src to Dst or vice-versa. The second expression
 /// represents the message sending function that determines which messages to send
 ///  from a vertex to its neighbors.
 ///
@@ -117,7 +117,7 @@ pub struct Pregel {
 ///
 /// * `send_messages`: `send_messages` is a tuple containing two expressions. The
 /// first expression represents the message sending function that determines whether
-/// the message will go from Src to Dst or viceversa. The second expression
+/// the message will go from Src to Dst or vice-versa. The second expression
 /// represents the message sending function that determines which messages to send
 ///  from a vertex to its neighbors.
 ///
@@ -405,7 +405,7 @@ impl Pregel {
     }
 
     /// This function returns an expression for a column identifier representing
-    ///  the destination vertex in a PRegel graph.
+    ///  the destination vertex in a Pregel graph.
     ///
     /// Arguments:
     ///
@@ -483,11 +483,11 @@ impl Pregel {
     ///   communication between vertices during computation.
     ///
     /// - Computation: Each vertex performs a user-defined computation during each
-    ///   superstep, based on its local state and the messages received from its
+    ///   super-step, based on its local state and the messages received from its
     ///   neighboring vertices.
     ///
     /// - Messages: Vertices can send messages to their neighboring vertices during
-    ///   each superstep, which are then delivered in the next superstep. Messages
+    ///   each super-step, which are then delivered in the next super-step. Messages
     ///   are used for communication and coordination between vertices.
     ///
     /// - Aggregators: functions that can be used to collect and aggregate
@@ -496,10 +496,10 @@ impl Pregel {
     ///
     /// # Usage
     ///
-    /// The Pregel model follows a sequence of supersteps, where each superstep consists
+    /// The Pregel model follows a sequence of super-step, where each super-step consists
     /// of computation, message exchange, and aggregation. Vertices perform their computations
     /// in parallel, and messages are exchanged between vertices to coordinate their activities.
-    /// The computation continues in a series of supersteps until a termination condition is met.
+    /// The computation continues in a series of super-steps until a termination condition is met.
     ///
     /// This Rust function provides an implementation of the Pregel model for graph processing,
     /// allowing users to run vertex-centric algorithms that operate on the local state
@@ -515,27 +515,38 @@ impl Pregel {
     /// a `PolarsResult<DataFrame>`, which is a result type that can either contain
     /// the resulting `DataFrame` or an error of type `PolarsError`.
     pub fn run(self) -> PolarsResult<DataFrame> {
+        // We create a tuple where we store the column names of the `send_messages` DataFrame. We use
+        // the `alias` method to ensure that the column names are properly qualified.
         let (send_messages_ids, send_messages_msg) = self.send_messages;
         let (send_messages_ids, send_messages_msg) = (
             send_messages_ids.alias(&Self::alias(&ColumnIdentifier::Msg, ColumnIdentifier::Id)),
             send_messages_msg.alias(ColumnIdentifier::Pregel.as_ref()),
         );
         // We start the execution of the algorithm from the super-step 0; that is, all the nodes
-        // are set to active, and the initial messages are sent to each vertex in the graph
+        // are set to active, and the initial messages are sent to each vertex in the graph. What's more,
+        // The initial messages are stored in the `initial_message` column of the `current_vertices` DataFrame.
+        // We use the `lazy` method to create a lazy DataFrame. This is done to avoid the execution of
+        // the DataFrame until the end of the algorithm.
         let mut current_vertices: DataFrame = match self
             .graph
             .vertices
             .clone()
             .lazy()
             .select(vec![
-                all(),
-                self.initial_message.alias(self.vertex_column.as_ref()),
+                all(), // we select all the columns of the graph vertices
+                self.initial_message.alias(self.vertex_column.as_ref()), // initial message column name is set by the user
             ])
             .collect()
         {
+            // if the execution of the DataFrame is successful, we store the result in the `current_vertices` variable
             Ok(current_vertices) => current_vertices,
+            // if the execution of the DataFrame fails, we return the error
             Err(error) => return Err(error),
         };
+        // We create a DataFrame that contains the edges of the graph. This DataFrame is used to
+        // compute the triplets of the graph, which are used to send messages to the neighboring
+        // vertices of each vertex in the graph. For us to do so, we select all the columns of the
+        // graph edges and we prefix them with the `Edge` column name.
         let edges = self
             .graph
             .edges
@@ -544,48 +555,56 @@ impl Pregel {
         // After computing the super-step 0, we start the execution of the Pregel algorithm. This
         // execution is performed until all the nodes vote to halt, or the number of iterations is
         // greater than the maximum number of iterations set by the user at the initialization of
-        // the model
+        // the model (see the `Pregel::new` method). We start by setting the number of iterations to 1.
         let mut iteration = 1;
+        // TODO: check that nodes are not halted :D
         while iteration <= self.max_iterations {
-            // TODO: check that nodes are not halted :D
-            // 0. We create the triplets DataFrame
+            // We create a DataFrame that contains the triplets of the graph. Those triplets are
+            // computed by joining the `current_vertices` DataFrame with the `edges` DataFrame
+            // first, and with the `current_vertices` second. The first join is performed on the `src`
+            // column of the `edges` DataFrame and the `id` column of the `current_vertices` DataFrame.
+            // The second join is performed on the `dst` column of the resulting DataFrame from the previous
+            // join and the `id` column of the `current_vertices` DataFrame.
             let triplets_df = current_vertices
                 .clone()
                 .lazy()
                 .select([Self::prefix_columns(all(), &ColumnIdentifier::Src)])
                 .inner_join(
                     edges.clone(),
-                    Self::src(ColumnIdentifier::Id),
-                    Self::edge(ColumnIdentifier::Src),
+                    Self::src(ColumnIdentifier::Id), // src column of the current_vertices DataFrame
+                    Self::edge(ColumnIdentifier::Src), // src column of the edges DataFrame
                 )
                 .inner_join(
                     current_vertices
                         .clone()
                         .lazy()
                         .select([Self::prefix_columns(all(), &ColumnIdentifier::Dst)]),
-                    Self::edge(ColumnIdentifier::Dst),
-                    Self::dst(ColumnIdentifier::Id),
+                    Self::edge(ColumnIdentifier::Dst), // dst column of the resulting DataFrame
+                    Self::dst(ColumnIdentifier::Id), // id column of the current_vertices DataFrame
                 );
-            // 1. Generate the messages for the current iteration
+            // We create a DataFrame that contains the messages sent by the vertices. The messages
+            // are computed by performing an aggregation on the `triplets_df` DataFrame. The aggregation
+            // is performed on the `msg` column of the `triplets_df` DataFrame, and the aggregation
+            // function is the one set by the user at the initialization of the model.
             let message_df = triplets_df
                 .select(vec![send_messages_ids.clone(), send_messages_msg.clone()])
                 .groupby([Self::msg(Some(ColumnIdentifier::Id))])
                 .agg([self.aggregate_messages.clone()]);
-            // 2. Compute the new values for the vertices. Note that we have to check for possibly
+            // We Compute the new values for the vertices. Note that we have to check for possibly
             // null values after performing the outer join. This is, columns where the join key does
-            // not exist in the source DataFrame.  In case we find any; for example, given a certain
-            // having no incoming edges, we have to replace the null value by 0, meaning the sum
-            // performed in the previous aggregation is 0, as no edges have as a destination such
-            // a vertex.
+            // not exist in the source DataFrame. In case we find any; for example, given a certain
+            // node having no incoming edges, we have to replace the null value by 0 for the aggregation
+            // to work properly.
             let vertex_columns = current_vertices
                 .clone()
                 .lazy()
                 .outer_join(
                     message_df,
-                    col(ColumnIdentifier::Id.as_ref()),
-                    Self::msg(Some(ColumnIdentifier::Id)),
+                    col(ColumnIdentifier::Id.as_ref()), // id column of the current_vertices DataFrame
+                    Self::msg(Some(ColumnIdentifier::Id)), // msg.id column of the message_df DataFrame
                 )
                 .with_column(
+                    // we replace the null values by 0
                     when(Self::msg(None).is_null())
                         .then(0)
                         .otherwise(Self::msg(None))
@@ -598,8 +617,11 @@ impl Pregel {
                         self.v_prog.clone().alias(self.vertex_column.as_ref()),
                     ],
                 );
-            // 3. Send messages to the neighboring nodes. Note that we have to materialize the
-            // DataFrame so the stack is does not end up overflowed
+            // We update the `current_vertices` DataFrame with the new values for the vertices. We
+            // do so by performing an inner join between the `current_vertices` DataFrame and the
+            // `vertex_columns` DataFrame. The join is performed on the `id` column of the
+            // `current_vertices` DataFrame and the `id` column of the `vertex_columns` DataFrame.
+            // TODO: We also check if the nodes have voted to halt. If so, we remove them from the `current_vertices` DataFrame.
             current_vertices = match self
                 .graph
                 .vertices
@@ -687,7 +709,7 @@ mod tests {
         }
     }
 
-    fn pagerank_test_helper(iterations: u8) -> Result<(), String> {
+    fn pagerank_helper(iterations: u8) -> Result<(), String> {
         let pagerank = match pagerank_builder(iterations) {
             Ok(pagerank) => pagerank,
             Err(_) => return Err(String::from("Error building the Pregel algorithm :(")),
@@ -708,9 +730,86 @@ mod tests {
     }
 
     #[test]
-    fn pagerank_test() -> Result<(), String> {
+    fn test_pagerank() -> Result<(), String> {
         for i in 1..3 {
-            pagerank_test_helper(i)?;
+            pagerank_helper(i)?;
+        }
+
+        Ok(())
+    }
+
+    fn max_value_builder(iterations: u8) -> Result<Pregel, Box<dyn Error>> {
+        let edges = df![
+            Src.as_ref() => [0, 1, 1, 2, 2, 3],
+            Dst.as_ref() => [1, 0, 3, 1, 3, 2],
+        ]?;
+
+        let vertices = df![
+            Id.as_ref() => [0, 1, 2, 3],
+            Custom("value".to_owned()).as_ref() => [3, 6, 2, 1],
+        ]?;
+
+        Ok(Pregel {
+            graph: GraphFrame::new(vertices, edges)?,
+            max_iterations: iterations,
+            vertex_column: Custom("max_value".to_owned()),
+            initial_message: col(Custom("value".to_owned()).as_ref()),
+            send_messages: (
+                Pregel::edge(MessageReceiver::into(MessageReceiver::Dst)),
+                Pregel::src(Custom("max_value".to_owned())),
+            ),
+            aggregate_messages: Pregel::msg(None).max(),
+            v_prog: max_exprs([
+                col(Custom("max_value".to_owned()).as_ref()),
+                Pregel::msg(None),
+            ]),
+        })
+    }
+
+    fn max_value_helper(iterations: u8) -> Result<(), String> {
+        let max_value = match max_value_builder(iterations) {
+            Ok(max_value) => max_value,
+            Err(_) => return Err(String::from("Error building the Pregel algorithm :(")),
+        };
+
+        let result = match max_value.run() {
+            Ok(result) => result,
+            Err(_) => return Err(String::from("Error running the Max algorithm")),
+        };
+
+        let max = match result.column("max_value") {
+            Ok(max) => max,
+            Err(_) => {
+                return Err(String::from(
+                    "Error retrieving the max column from the DataFrame",
+                ))
+            }
+        };
+
+        let max_i32 = match max.i32() {
+            Ok(max_i32) => max_i32,
+            Err(_) => return Err(String::from("Error casting the max column to i32")),
+        };
+
+        match max_i32.max() {
+            Some(max) => {
+                // In case the maximum value is computed
+                if max == 6 {
+                    // In case MAX equals to 6, that means that the algorithm has converged
+                    Ok(())
+                } else {
+                    // In any other case, the algorithm has not converged: ERROR
+                    Err(String::from("The maximum value should be 4"))
+                }
+            }
+            None => Err(String::from("Error computing the maximum value")),
+        }
+    }
+
+    #[test]
+    fn test_max_value() -> Result<(), String> {
+        for i in 1..3 {
+            max_value_helper(i)?;
         }
 
         Ok(())
