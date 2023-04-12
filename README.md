@@ -1,6 +1,7 @@
 # `pregel-rs`
 
 [![CI](https://github.com/angelip2303/pregel-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/angelip2303/pregel-rs/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/angelip2303/pregel-rs/branch/main/graph/badge.svg?token=8SCDSSPH13)](https://codecov.io/gh/angelip2303/pregel-rs)
 [![latest_version](https://img.shields.io/crates/v/pregel-rs)](https://crates.io/crates/pregel-rs)
 [![documentation](https://img.shields.io/docsrs/pregel-rs/latest)](https://docs.rs/pregel-rs/latest/pregel_rs/)
 
