@@ -522,27 +522,6 @@ impl Pregel {
             send_messages_ids.alias(&Self::alias(&ColumnIdentifier::Msg, ColumnIdentifier::Id)),
             send_messages_msg.alias(ColumnIdentifier::Pregel.as_ref()),
         );
-        // We start the execution of the algorithm from the super-step 0; that is, all the nodes
-        // are set to active, and the initial messages are sent to each vertex in the graph. What's more,
-        // The initial messages are stored in the `initial_message` column of the `current_vertices` DataFrame.
-        // We use the `lazy` method to create a lazy DataFrame. This is done to avoid the execution of
-        // the DataFrame until the end of the algorithm.
-        let mut current_vertices: DataFrame = match self
-            .graph
-            .vertices
-            .clone()
-            .lazy()
-            .select(vec![
-                all(), // we select all the columns of the graph vertices
-                self.initial_message.alias(self.vertex_column.as_ref()), // initial message column name is set by the user
-            ])
-            .collect()
-        {
-            // if the execution of the DataFrame is successful, we store the result in the `current_vertices` variable
-            Ok(current_vertices) => current_vertices,
-            // if the execution of the DataFrame fails, we return the error
-            Err(error) => return Err(error),
-        };
         // We create a DataFrame that contains the edges of the graph. This DataFrame is used to
         // compute the triplets of the graph, which are used to send messages to the neighboring
         // vertices of each vertex in the graph. For us to do so, we select all the columns of the
@@ -552,6 +531,20 @@ impl Pregel {
             .edges
             .lazy()
             .select([Self::prefix_columns(all(), &ColumnIdentifier::Edge)]);
+        // We create a DataFrame that contains the vertices of the graph
+        let vertices = &self.graph.vertices.lazy();
+        // We start the execution of the algorithm from the super-step 0; that is, all the nodes
+        // are set to active, and the initial messages are sent to each vertex in the graph. What's more,
+        // The initial messages are stored in the `initial_message` column of the `current_vertices` DataFrame.
+        // We use the `lazy` method to create a lazy DataFrame. This is done to avoid the execution of
+        // the DataFrame until the end of the algorithm.
+        let mut current_vertices = vertices
+            .to_owned()
+            .select(vec![
+                all(), // we select all the columns of the graph vertices
+                self.initial_message.alias(self.vertex_column.as_ref()), // initial message column name is set by the user
+            ])
+            .collect()?;
         // After computing the super-step 0, we start the execution of the Pregel algorithm. This
         // execution is performed until all the nodes vote to halt, or the number of iterations is
         // greater than the maximum number of iterations set by the user at the initialization of
@@ -565,9 +558,9 @@ impl Pregel {
             // column of the `edges` DataFrame and the `id` column of the `current_vertices` DataFrame.
             // The second join is performed on the `dst` column of the resulting DataFrame from the previous
             // join and the `id` column of the `current_vertices` DataFrame.
-            let triplets_df = current_vertices
-                .clone()
-                .lazy()
+            let current_vertices_df = &current_vertices.lazy();
+            let triplets_df = current_vertices_df
+                .to_owned()
                 .select([Self::prefix_columns(all(), &ColumnIdentifier::Src)])
                 .inner_join(
                     edges.clone(),
@@ -575,9 +568,8 @@ impl Pregel {
                     Self::edge(ColumnIdentifier::Src), // src column of the edges DataFrame
                 )
                 .inner_join(
-                    current_vertices
-                        .clone()
-                        .lazy()
+                    current_vertices_df
+                        .to_owned()
                         .select([Self::prefix_columns(all(), &ColumnIdentifier::Dst)]),
                     Self::edge(ColumnIdentifier::Dst), // dst column of the resulting DataFrame
                     Self::dst(ColumnIdentifier::Id), // id column of the current_vertices DataFrame
@@ -586,18 +578,24 @@ impl Pregel {
             // are computed by performing an aggregation on the `triplets_df` DataFrame. The aggregation
             // is performed on the `msg` column of the `triplets_df` DataFrame, and the aggregation
             // function is the one set by the user at the initialization of the model.
+            let sends_messages_ids_df = &send_messages_ids;
+            let send_messages_msg_df = &send_messages_msg;
+            let aggregate_messages_df = &self.aggregate_messages;
             let message_df = triplets_df
-                .select(vec![send_messages_ids.clone(), send_messages_msg.clone()])
+                .select(vec![
+                    sends_messages_ids_df.to_owned(),
+                    send_messages_msg_df.to_owned(),
+                ])
                 .groupby([Self::msg(Some(ColumnIdentifier::Id))])
-                .agg([self.aggregate_messages.clone()]);
+                .agg([aggregate_messages_df.to_owned()]);
             // We Compute the new values for the vertices. Note that we have to check for possibly
             // null values after performing the outer join. This is, columns where the join key does
             // not exist in the source DataFrame. In case we find any; for example, given a certain
             // node having no incoming edges, we have to replace the null value by 0 for the aggregation
             // to work properly.
-            let vertex_columns = current_vertices
-                .clone()
-                .lazy()
+            let v_prog_df = &self.v_prog;
+            let vertex_columns = current_vertices_df
+                .to_owned()
                 .outer_join(
                     message_df,
                     col(ColumnIdentifier::Id.as_ref()), // id column of the current_vertices DataFrame
@@ -614,7 +612,7 @@ impl Pregel {
                     // TODO: fix this move: previous iteration of the loop. Improve?
                     vec![
                         col(ColumnIdentifier::Id.as_ref()),
-                        self.v_prog.clone().alias(self.vertex_column.as_ref()),
+                        v_prog_df.to_owned().alias(self.vertex_column.as_ref()),
                     ],
                 );
             // We update the `current_vertices` DataFrame with the new values for the vertices. We
@@ -622,21 +620,14 @@ impl Pregel {
             // `vertex_columns` DataFrame. The join is performed on the `id` column of the
             // `current_vertices` DataFrame and the `id` column of the `vertex_columns` DataFrame.
             // TODO: We also check if the nodes have voted to halt. If so, we remove them from the `current_vertices` DataFrame.
-            current_vertices = match self
-                .graph
-                .vertices
-                .clone()
-                .lazy()
+            current_vertices = vertices
+                .to_owned()
                 .inner_join(
                     vertex_columns,
                     col(ColumnIdentifier::Id.as_ref()),
                     col(ColumnIdentifier::Id.as_ref()),
                 )
-                .collect()
-            {
-                Ok(current_vertices) => current_vertices,
-                Err(error) => return Err(error),
-            };
+                .collect()?;
 
             iteration += 1; // increment the counter so we now which iteration is being executed
         }
