@@ -7,12 +7,19 @@ use polars::prelude::*;
 /// types of columns in a data structure or database table for it to be used
 /// in a Pregel program.
 pub enum ColumnIdentifier {
+    /// The `Id` variant represents the column that contains the vertex IDs.
     Id,
+    /// The `Src` variant represents the column that contains the source vertex IDs.
     Src,
+    /// The `Dst` variant represents the column that contains the destination vertex IDs.
     Dst,
+    /// The `Edge` variant represents the column that contains the edge IDs.
     Edge,
+    /// The `Msg` variant represents the column that contains the messages sent to a vertex.
     Msg,
+    /// The `Pregel` variant represents the column that contains the messages sent to a vertex.
     Pregel,
+    /// The `Custom` variant represents a column that is not one of the predefined columns.
     Custom(String),
 }
 
@@ -84,12 +91,35 @@ impl AsRef<str> for ColumnIdentifier {
 /// state of the vertex, the messages received from its neighbors or and any other
 /// relevant information.
 pub struct Pregel {
+    /// The `graph` property is a `GraphFrame` struct that represents the
+    /// graph data structure used in the Pregel algorithm. It contains information about
+    /// the vertices and edges of the graph.
     graph: GraphFrame,
+    /// The maximum number of iterations that the Pregel algorithm.
     max_iterations: u8,
+    /// `vertex_column` is a property of the `PregelBuilder` struct that  identifies
+    /// and locates a column where we apply some of the provided operations during
+    /// the Pregel computation.
     vertex_column: ColumnIdentifier,
+    /// `initial_message` is an expression that defines the initial message that
+    /// each vertex in the graph will receive before the computation starts.
     initial_message: Expr,
+    /// `send_messages` is a tuple containing two expressions. The first expression
+    /// determines whether the message will go from Src to Dst or vice-versa. The
+    ///  second expression represents the message sending function that determines
+    /// which messages to send from a vertex to its neighbors.
     send_messages: (Expr, Expr),
+    /// `aggregate_messages` is an expression that defines how messages sent to a
+    /// vertex should be aggregated. In Pregel, messages are sent from one vertex
+    /// to another and can be aggregated before being processed by the receiving
+    /// vertex. The `aggregate_messages` expression specifies how these messages
+    /// should be combined.
     aggregate_messages: Expr,
+    /// `v_prog` is an expression that defines the vertex program for the Pregel
+    /// algorithm. It specifies the computation that each vertex performs during
+    /// each iteration of the algorithm. The vertex program can take as input the
+    /// current state of the vertex, the messages received from its neighbors or
+    /// and any other relevant information.
     v_prog: Expr,
 }
 
@@ -133,12 +163,35 @@ pub struct Pregel {
 /// state of the vertex, the messages received from its neighbors or and any other
 /// relevant information.
 pub struct PregelBuilder {
+    /// The `graph` property is a `GraphFrame` struct that represents the
+    /// graph data structure used in the Pregel algorithm. It contains information about
+    /// the vertices and edges of the graph.
     graph: GraphFrame,
+    /// The maximum number of iterations that the Pregel algorithm.
     max_iterations: u8,
+    /// `vertex_column` is a property of the `PregelBuilder` struct that  identifies
+    /// and locates a column where we apply some of the provided operations during
+    /// the Pregel computation.
     vertex_column: ColumnIdentifier,
+    /// `initial_message` is an expression that defines the initial message that
+    /// each vertex in the graph will receive before the computation starts.
     initial_message: Expr,
+    /// `send_messages` is a tuple containing two expressions. The first expression
+    /// determines whether the message will go from Src to Dst or vice-versa. The
+    ///  second expression represents the message sending function that determines
+    /// which messages to send from a vertex to its neighbors.
     send_messages: (Expr, Expr),
+    /// `aggregate_messages` is an expression that defines how messages sent to a
+    /// vertex should be aggregated. In Pregel, messages are sent from one vertex
+    /// to another and can be aggregated before being processed by the receiving
+    /// vertex. The `aggregate_messages` expression specifies how these messages
+    /// should be combined.
     aggregate_messages: Expr,
+    /// `v_prog` is an expression that defines the vertex program for the Pregel
+    /// algorithm. It specifies the computation that each vertex performs during
+    /// each iteration of the algorithm. The vertex program can take as input the
+    /// current state of the vertex, the messages received from its neighbors or
+    /// and any other relevant information.
     v_prog: Expr,
 }
 
@@ -146,7 +199,11 @@ pub struct PregelBuilder {
 /// two variants: `Src` and `Dst`. This can be used to represent the source and
 /// destination of a message in a Pregel program.
 pub enum MessageReceiver {
+    /// The `Src` variant indicates that a message should go to the source of
+    /// an edge.
     Src,
+    /// The `Src` variant indicates that a message should go to the destination
+    /// of an edge.
     Dst,
 }
 

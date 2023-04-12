@@ -19,7 +19,9 @@ use std::{error, fmt};
 /// * `edges`: The `edges` property is a `DataFrame` that represents the edges of a
 /// graph. It must contain -- at least -- two columns: Src and Dst.
 pub struct GraphFrame {
+    /// The `vertices` property is a `DataFrame` that represents the nodes in a graph.
     pub vertices: DataFrame,
+    /// The `edges` property is a `DataFrame` that represents the edges of a graph.
     pub edges: DataFrame,
 }
 
@@ -30,8 +32,14 @@ type Result<T> = std::result::Result<T, GraphFrameError>;
 /// `FromPolars` and `MissingColumn`.
 #[derive(Debug)]
 pub enum GraphFrameError {
+    /// `DuckDbError` is a variant of `GraphFrameError` that represents errors that
+    /// occur when working with the DuckDB database.
     DuckDbError(&'static str),
+    /// `FromPolars` is a variant of `GraphFrameError` that represents errors that
+    /// occur when converting from a `PolarsError`.
     FromPolars(PolarsError),
+    /// `MissingColumn` is a variant of `GraphFrameError` that represents errors that
+    /// occur when a required column is missing from a DataFrame.
     MissingColumn(MissingColumnError),
 }
 
@@ -60,8 +68,14 @@ impl error::Error for GraphFrameError {
 ///  debugging of the enum by printing its values in a formatted way.
 #[derive(Debug)]
 pub enum MissingColumnError {
+    /// `Id` is a variant of `MissingColumnError` that represents the error that
+    /// occurs when the `Id` column is missing from a DataFrame.
     Id,
+    /// `Src` is a variant of `MissingColumnError` that represents the error that
+    /// occurs when the `Src` column is missing from a DataFrame.
     Src,
+    /// `Dst` is a variant of `MissingColumnError` that represents the error that
+    /// occurs when the `Dst` column is missing from a DataFrame.
     Dst,
 }
 
