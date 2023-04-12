@@ -15,6 +15,9 @@ categories = ["algorithms", "database", "mathematics", "science"]
 duckdb = { version = "0.7.1" }
 polars = { version = "0.28.0", features = ["lazy"] }
 
+[dev-dependencies]
+duckdb = { version = "0.7.1", features = ["bundled"] }
+
 [package.metadata.docs.rs]
 features = []
 all-features = false
