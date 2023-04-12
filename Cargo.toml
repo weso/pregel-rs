@@ -3,6 +3,7 @@ name = "pregel-rs"
 version = "0.0.1"
 authors = [ "Ángel Iglesias Préstamo <angel.iglesias.prestamo@gmail.com>" ]
 description = "A Graph library written in Rust for implementing your own algorithms in a Pregel fashion"
+documentation = "https://docs.rs/crate/pregel-rs/latest"
 repository = "https://github.com/angelip2303/pregel-rs"
 readme = "README.md"
 license = "GPL-3.0-or-later"
@@ -11,5 +12,11 @@ keywords = ["pregel", "graph", "pagerank", "polars", "duckdb"]
 categories = ["algorithms", "database", "mathematics", "science"]
 
 [dependencies]
-duckdb = { version = "0.7.1", features = ["bundled"] }
+duckdb = { version = "0.7.1" }
 polars = { version = "0.28.0", features = ["lazy"] }
+
+[package.metadata.docs.rs]
+features = []
+all-features = false
+no-default-features = true
+default-target = "x86_64-unknown-linux-gnu"
