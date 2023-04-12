@@ -48,7 +48,7 @@ https://www.rust-lang.org/tools/install
 project using the Cargo package manager, which is included with Rust. You can
 create a new project by running the following command in your terminal:
 
-```
+```ignore
 cargo new my_pregel_project
 ```
 
@@ -56,7 +56,7 @@ cargo new my_pregel_project
 dependency in your `Cargo.toml` file, which is located in the root directory
 of your project. You can add the following line to your `Cargo.toml` file:
 
-```
+```ignore
 [dependencies]
 pregel-rs = "0.0.1"
 ```
@@ -69,13 +69,13 @@ functions and use the graph abstraction provided by `pregel-rs` to manipulate th
 can build and run your project using the Cargo package manager. You can build your
 project by running the following command in your terminal:
 
-```
+```ignore
 cargo build
 ```
 
 And you can run your project by running the following command:
 
-```
+```ignore
 cargo run
 ```
 
