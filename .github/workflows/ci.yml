@@ -61,7 +61,7 @@ jobs:
         with:
           command: fmt
           args: --all -- --check
-
+          
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
@@ -82,3 +82,10 @@ jobs:
         with:
           command: clippy
           args: -- -D warnings
+  
+  coverage:
+    needs: test
+    name: Upload coverage reports to Codecov
+    runs-on: ubuntu-latest
+    steps:
+      - uses: codecov/codecov-action@v3
