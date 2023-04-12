@@ -38,7 +38,7 @@ of `pregel-rs` to suit their specific needs.
 
 ## Getting started
 
-To get started with Pregel-rs, you can follow these steps:
+To get started with `pregel-rs`, you can follow these steps:
 
 1. _Install Rust_: `pregel-rs` requires Rust to be installed on your system.
 You can install Rust by following the instructions on the official Rust website:
