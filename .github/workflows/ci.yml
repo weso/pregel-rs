@@ -40,6 +40,9 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: test
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+
 
   fmt:
     name: Rustfmt
@@ -82,10 +85,3 @@ jobs:
         with:
           command: clippy
           args: -- -D warnings
-  
-  coverage:
-    needs: test
-    name: Upload coverage reports to Codecov
-    runs-on: ubuntu-latest
-    steps:
-      - uses: codecov/codecov-action@v3
