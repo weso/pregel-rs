@@ -697,7 +697,7 @@ impl Pregel {
 mod tests {
     use crate::graph_frame::GraphFrame;
     use crate::pregel::ColumnIdentifier::{Custom, Dst, Id, Src};
-    use crate::pregel::{MessageReceiver, Pregel};
+    use crate::pregel::{MessageReceiver, Pregel, PregelBuilder};
     use polars::prelude::*;
     use std::error::Error;
 
@@ -712,20 +712,21 @@ mod tests {
         let damping_factor = 0.85;
         let num_vertices: f64 = vertices.column(Id.as_ref())?.len() as f64;
 
-        Ok(Pregel {
-            graph: GraphFrame::new(vertices, edges)?,
-            max_iterations: iterations,
-            vertex_column: Custom("rank".to_owned()),
-            initial_message: lit(1.0 / num_vertices),
-            send_messages: (
-                Pregel::edge(MessageReceiver::into(MessageReceiver::Dst)),
+        Ok(PregelBuilder::new(GraphFrame::new(vertices, edges)?)
+            .max_iterations(iterations)
+            .with_vertex_column(Custom("rank".to_owned()))
+            .initial_message(lit(1.0 / num_vertices))
+            .send_messages(
+                MessageReceiver::Dst,
                 Pregel::src(Custom("rank".to_owned()))
                     / Pregel::src(Custom("out_degree".to_owned())),
-            ),
-            aggregate_messages: Pregel::msg(None).sum(),
-            v_prog: Pregel::msg(None) * lit(damping_factor)
-                + lit((1.0 - damping_factor) / num_vertices),
-        })
+            )
+            .aggregate_messages(Pregel::msg(None).sum())
+            .v_prog(
+                Pregel::msg(None) * lit(damping_factor)
+                    + lit((1.0 - damping_factor) / num_vertices),
+            )
+            .build())
     }
 
     fn agg_pagerank(pagerank: Pregel) -> Result<f64, String> {
