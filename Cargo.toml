@@ -8,15 +8,11 @@ repository = "https://github.com/angelip2303/pregel-rs"
 readme = "README.md"
 license = "GPL-3.0-or-later"
 edition = "2021"
-keywords = ["pregel", "graph", "pagerank", "polars", "duckdb"]
+keywords = ["pregel", "graph", "pagerank", "polars", "algorithms"]
 categories = ["algorithms", "database", "mathematics", "science"]
 
 [dependencies]
-duckdb = { version = "0.7.1" }
 polars = { version = "0.28.0", features = ["lazy"] }
-
-[dev-dependencies]
-duckdb = { version = "0.7.1", features = ["bundled"] }
 
 [package.metadata.docs.rs]
 features = []

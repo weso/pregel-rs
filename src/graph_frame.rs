@@ -1,10 +1,5 @@
-use crate::pregel::ColumnIdentifier;
 use crate::pregel::ColumnIdentifier::{Custom, Dst, Id, Src};
-use duckdb::arrow::array::{Array, Int32Array};
-use duckdb::arrow::record_batch::RecordBatch;
-use duckdb::Connection;
 use polars::prelude::*;
-use polars::series::Series;
 use std::fmt::{Debug, Display, Formatter};
 use std::{error, fmt};
 
