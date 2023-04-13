@@ -1,3 +1,4 @@
+use crate::pregel::ColumnIdentifier;
 use crate::pregel::ColumnIdentifier::{Custom, Dst, Id, Src};
 use duckdb::arrow::array::{Array, Int32Array};
 use duckdb::arrow::record_batch::RecordBatch;
@@ -5,7 +6,6 @@ use duckdb::Connection;
 use polars::prelude::*;
 use polars::series::Series;
 use std::fmt::{Debug, Display, Formatter};
-use std::path::Path;
 use std::{error, fmt};
 
 /// The `GraphFrame` type is a struct containing two `DataFrame` fields, `vertices`
@@ -81,12 +81,7 @@ pub enum MissingColumnError {
 
 impl Display for MissingColumnError {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        let message = |df, column: &str| {
-            format!(
-                "The provided {} must contain a column named {} for the Graph to be created",
-                df, column
-            )
-        };
+        let message = |df, column: &str| format!("Missing column {} in {}", column, df);
 
         match self {
             MissingColumnError::Id => write!(f, "{}", message("vertices", Id.as_ref())),
@@ -168,40 +163,41 @@ impl GraphFrame {
         GraphFrame::new(vertices, edges)
     }
 
-    /// This function creates a `GraphFrame` from data stored in a DuckDB database.
+    fn series_from_duckdb(
+        column_identifier: ColumnIdentifier,
+        array_ref: &Arc<dyn Array>,
+    ) -> Series {
+        Series::new(
+            column_identifier.as_ref(),
+            array_ref
+                .as_any()
+                .downcast_ref::<Int32Array>()
+                .unwrap()
+                .values()
+                .to_vec(),
+        )
+    }
+
+    /// This function creates a new `GraphFrame` from a duckdb connection. This is, the function will
+    /// create a new `GraphFrame` by selecting all the entities from the tables and concatenating them
+    /// into a unique set of edges. The connection should contain the following tables:
+    ///     - Edge
+    ///     - Coordinate
+    ///     - Quantity
+    ///     - String
+    ///     - Time
     ///
     /// Arguments:
     ///
-    /// * `path`: A string representing the path to a DuckDB database file.
+    /// * `connection`: A duckdb connection.
     ///
     /// Returns:
     ///
-    /// a `Result<Self>` where `Self` is the `GraphFrame` struct.
-    pub fn from_duckdb(path: &str) -> Result<Self> {
-        let database_path = match Path::new(path).try_exists() {
-            Ok(true) => Path::new(path),
-            Ok(false) => {
-                return Err(GraphFrameError::DuckDbError(
-                    "The provided path does not exist",
-                ))
-            }
-            _ => {
-                return Err(GraphFrameError::DuckDbError(
-                    "Cannot open a connection with the provided Database",
-                ))
-            }
-        };
-        let connection = match Connection::open(database_path) {
-            Ok(connection) => connection,
-            Err(_) => {
-                return Err(GraphFrameError::DuckDbError(
-                    "Cannot connect to the provided Database",
-                ))
-            }
-        };
-
+    /// The `from_duckdb` function returns a `Result<Self>` where `Self` is the `GraphFrame` struct.
+    /// The `Ok` variant of the `Result` contains an instance of `GraphFrame` initialized  with the
+    /// provided `connection`.
+    pub fn from_duckdb(connection: Connection) -> Result<Self> {
         let mut statement = match connection.prepare(
-            // TODO: include the rest of the entities
             "select src_id, property_id, dst_id from edge
             union
             select src_id, property_id, dst_id from coordinate
@@ -230,40 +226,15 @@ impl GraphFrame {
         };
 
         let mut dataframe = DataFrame::default();
+
         for batch in batches {
-            let src_id = batch.column(0); // TODO: by name?
-            let property_id = batch.column(1);
-            let src_dst = batch.column(2);
+            let src_id = batch.column(0);
+            let p_id = batch.column(1);
+            let dst_id = batch.column(2);
 
-            let srcs = Series::new(
-                Src.as_ref(),
-                src_id
-                    .as_any()
-                    .downcast_ref::<Int32Array>()
-                    .unwrap()
-                    .values()
-                    .to_vec(),
-            );
-
-            let properties = Series::new(
-                Custom("property_id".to_string()).as_ref(),
-                property_id
-                    .as_any()
-                    .downcast_ref::<Int32Array>()
-                    .unwrap()
-                    .values()
-                    .to_vec(),
-            );
-
-            let dsts = Series::new(
-                Dst.as_ref(),
-                src_dst
-                    .as_any()
-                    .downcast_ref::<Int32Array>()
-                    .unwrap()
-                    .values()
-                    .to_vec(),
-            );
+            let srcs = Self::series_from_duckdb(Src, src_id);
+            let properties = Self::series_from_duckdb(Custom("property_id".to_string()), p_id);
+            let dsts = Self::series_from_duckdb(Dst, dst_id);
 
             let tmp_dataframe = match DataFrame::new(vec![srcs, properties, dsts]) {
                 Ok(tmp_dataframe) => tmp_dataframe,
@@ -385,5 +356,41 @@ mod tests {
                 .unwrap(),
             10
         );
+    }
+
+    #[test]
+    fn test_new_missing_id_column() {
+        let vertices = DataFrame::new(vec![Series::new("its_not_id", [1, 2, 3])]).unwrap();
+        let srcs = Series::new("src", [1, 2, 3]);
+        let dsts = Series::new("dst", [2, 3, 4]);
+        let edges = DataFrame::new(vec![srcs, dsts]).unwrap();
+        match GraphFrame::new(vertices, edges) {
+            Ok(_) => panic!("Should have failed"),
+            Err(e) => assert_eq!(e.to_string(), "Missing column id in vertices"),
+        }
+    }
+
+    #[test]
+    fn test_new_missing_src_column() {
+        let vertices = DataFrame::new(vec![Series::new("id", [1, 2, 3])]).unwrap();
+        let srcs = Series::new("its_not_src", [1, 2, 3]);
+        let dsts = Series::new("dst", [2, 3, 4]);
+        let edges = DataFrame::new(vec![srcs, dsts]).unwrap();
+        match GraphFrame::new(vertices, edges) {
+            Ok(_) => panic!("Should have failed"),
+            Err(e) => assert_eq!(e.to_string(), "Missing column src in edges"),
+        }
+    }
+
+    #[test]
+    fn test_new_missing_dst_column() {
+        let vertices = DataFrame::new(vec![Series::new("id", [1, 2, 3])]).unwrap();
+        let srcs = Series::new("src", [1, 2, 3]);
+        let dsts = Series::new("its_not_dst", [2, 3, 4]);
+        let edges = DataFrame::new(vec![srcs, dsts]).unwrap();
+        match GraphFrame::new(vertices, edges) {
+            Ok(_) => panic!("Should have failed"),
+            Err(e) => assert_eq!(e.to_string(), "Missing column dst in edges"),
+        }
     }
 }
