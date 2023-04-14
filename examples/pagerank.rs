@@ -24,11 +24,11 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let pregel = PregelBuilder::new(GraphFrame::new(vertices, edges)?)
         .max_iterations(4)
-        .with_vertex_column(Custom("rank".to_owned()))
+        .with_vertex_column(Custom("rank"))
         .initial_message(lit(1.0 / num_vertices))
         .send_messages(
             MessageReceiver::Dst,
-            Pregel::src(Custom("rank".to_owned())) / Pregel::src(Custom("out_degree".to_owned())),
+            Pregel::src(Custom("rank")) / Pregel::src(Custom("out_degree")),
         )
         .aggregate_messages(Pregel::msg(None).sum())
         .v_prog(

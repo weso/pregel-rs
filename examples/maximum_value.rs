@@ -20,20 +20,17 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let vertices = df![
         Id.as_ref() => [0, 1, 2, 3],
-        Custom("value".to_owned()).as_ref() => [3, 6, 2, 1],
+        Custom("value").as_ref() => [3, 6, 2, 1],
     ]?;
 
     let pregel = PregelBuilder::new(GraphFrame::new(vertices, edges)?)
         .max_iterations(4)
-        .with_vertex_column(Custom("max_value".to_owned()))
-        .initial_message(col(Custom("value".to_owned()).as_ref()))
-        .send_messages(
-            MessageReceiver::Dst,
-            Pregel::src(Custom("max_value".to_owned())),
-        )
+        .with_vertex_column(Custom("max_value"))
+        .initial_message(col(Custom("value").as_ref()))
+        .send_messages(MessageReceiver::Dst, Pregel::src(Custom("max_value")))
         .aggregate_messages(Pregel::msg(None).max())
         .v_prog(max_exprs([
-            col(Custom("max_value".to_owned()).as_ref()),
+            col(Custom("max_value").as_ref()),
             Pregel::msg(None),
         ]))
         .build();

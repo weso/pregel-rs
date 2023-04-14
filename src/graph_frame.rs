@@ -27,9 +27,6 @@ type Result<T> = std::result::Result<T, GraphFrameError>;
 /// `FromPolars` and `MissingColumn`.
 #[derive(Debug)]
 pub enum GraphFrameError {
-    /// `DuckDbError` is a variant of `GraphFrameError` that represents errors that
-    /// occur when working with the DuckDB database.
-    DuckDbError(&'static str),
     /// `FromPolars` is a variant of `GraphFrameError` that represents errors that
     /// occur when converting from a `PolarsError`.
     FromPolars(PolarsError),
@@ -41,7 +38,6 @@ pub enum GraphFrameError {
 impl Display for GraphFrameError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            GraphFrameError::DuckDbError(error) => Display::fmt(error, f),
             GraphFrameError::FromPolars(error) => Display::fmt(error, f),
             GraphFrameError::MissingColumn(error) => Display::fmt(error, f),
         }
@@ -51,7 +47,6 @@ impl Display for GraphFrameError {
 impl error::Error for GraphFrameError {
     fn source(&self) -> Option<&(dyn error::Error + 'static)> {
         match *self {
-            GraphFrameError::DuckDbError(_) => None,
             GraphFrameError::FromPolars(ref e) => Some(e),
             GraphFrameError::MissingColumn(_) => None,
         }
@@ -173,7 +168,7 @@ impl GraphFrame {
         self.edges
             .lazy()
             .groupby([col(Src.as_ref()).alias(Id.as_ref())])
-            .agg([count().alias(Custom("out_degree".to_owned()).as_ref())])
+            .agg([count().alias(Custom("out_degree").as_ref())])
             .collect()
     }
 
@@ -192,7 +187,7 @@ impl GraphFrame {
         self.edges
             .lazy()
             .groupby([col(Dst.as_ref())])
-            .agg([count().alias(Custom("in_degree".to_owned()).as_ref())])
+            .agg([count().alias(Custom("in_degree").as_ref())])
             .collect()
     }
 }
