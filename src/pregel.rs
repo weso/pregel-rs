@@ -631,7 +631,6 @@ impl Pregel {
             let sends_messages_ids_df = &send_messages_ids;
             let send_messages_msg_df = &send_messages_msg;
             let aggregate_messages_df = &aggregate_messages;
-            println!("{:?}", triplets_df.clone().collect());
             let message_df = triplets_df
                 .select(vec![
                     sends_messages_ids_df.to_owned(),
