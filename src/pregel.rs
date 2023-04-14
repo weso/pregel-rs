@@ -10,7 +10,7 @@ pub enum ColumnIdentifier {
     /// The `Id` variant represents the column that contains the vertex IDs.
     Id,
     /// The `Src` variant represents the column that contains the source vertex IDs.
-    Src, // TODO: check if the repeated naming is just fine or not
+    Src,
     /// The `Dst` variant represents the column that contains the destination vertex IDs.
     Dst,
     /// The `Edge` variant represents the column that contains the edge IDs.
@@ -316,6 +316,7 @@ impl PregelBuilder {
             MessageReceiver::Src => Pregel::src(ColumnIdentifier::Id),
             MessageReceiver::Dst => Pregel::edge(ColumnIdentifier::Dst),
         };
+        // Now we can set the send_messages field of the struct to the provided expression.
         self.send_messages = (to, send_messages);
         self
     }
