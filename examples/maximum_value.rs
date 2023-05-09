@@ -1,7 +1,7 @@
 use polars::prelude::*;
 use pregel_rs::graph_frame::GraphFrame;
-use pregel_rs::pregel::ColumnIdentifier::{Custom, Dst, Id, Src};
-use pregel_rs::pregel::{MessageReceiver, Pregel, PregelBuilder};
+use pregel_rs::pregel::Column::{Custom, Dst, Id, Src};
+use pregel_rs::pregel::{Column, MessageReceiver, PregelBuilder};
 use std::error::Error;
 
 /// This Rust function uses the Pregel algorithm to find the maximum value in a
@@ -27,11 +27,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         .max_iterations(4)
         .with_vertex_column(Custom("max_value"))
         .initial_message(col(Custom("value").as_ref()))
-        .send_messages(MessageReceiver::Dst, Pregel::src(Custom("max_value")))
-        .aggregate_messages(Pregel::msg(None).max())
+        .send_messages(MessageReceiver::Dst, Column::src(Custom("max_value")))
+        .aggregate_messages(Column::msg(None).max())
         .v_prog(max_exprs([
             col(Custom("max_value").as_ref()),
-            Pregel::msg(None),
+            Column::msg(None),
         ]))
         .build();
 

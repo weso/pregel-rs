@@ -1,7 +1,7 @@
 use polars::prelude::*;
 use pregel_rs::graph_frame::GraphFrame;
-use pregel_rs::pregel::ColumnIdentifier::{Custom, Dst, Id, Src};
-use pregel_rs::pregel::{MessageReceiver, Pregel, PregelBuilder};
+use pregel_rs::pregel::Column::{Custom, Dst, Id, Src};
+use pregel_rs::pregel::{Column, MessageReceiver, PregelBuilder};
 use std::error::Error;
 
 /// This Rust function implements the PageRank algorithm using the Pregel framework.
@@ -28,11 +28,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         .initial_message(lit(1.0 / num_vertices))
         .send_messages(
             MessageReceiver::Dst,
-            Pregel::src(Custom("rank")) / Pregel::src(Custom("out_degree")),
+            Column::src(Custom("rank")) / Column::src(Custom("out_degree")),
         )
-        .aggregate_messages(Pregel::msg(None).sum())
+        .aggregate_messages(Column::msg(None).sum())
         .v_prog(
-            Pregel::msg(None) * lit(damping_factor) + lit((1.0 - damping_factor) / num_vertices),
+            Column::msg(None) * lit(damping_factor) + lit((1.0 - damping_factor) / num_vertices),
         )
         .build();
 

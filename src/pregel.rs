@@ -1,12 +1,14 @@
 use crate::graph_frame::GraphFrame;
 use polars::prelude::*;
 
+type FnBox<'a> = Box<dyn FnMut() -> Expr + 'a>;
+
 /// This defines an enumeration type `ColumnIdentifier` in Rust. It  has several
 /// variants: `Id`, `Src`, `Dst`, `Edge`, `Msg`, `Pregel`, and `Custom` which
 /// takes a `String` parameter. This enum can be used to represent different
 /// types of columns in a data structure or database table for it to be used
 /// in a Pregel program.
-pub enum ColumnIdentifier {
+pub enum Column {
     /// The `Id` variant represents the column that contains the vertex IDs.
     Id,
     /// The `Src` variant represents the column that contains the source vertex IDs.
@@ -23,16 +25,122 @@ pub enum ColumnIdentifier {
     Custom(&'static str),
 }
 
-impl AsRef<str> for ColumnIdentifier {
+/// This is the implementation of the `AsRef` trait for the `Column` enum. This
+/// allows instances of the `Column` enum to be used as references to strings. The
+/// `as_ref` method returns a reference to a string that corresponds to the variant
+/// of the `Column` enum. If the variant is `Custom`, the string is the custom
+/// identifier provided as an argument to the variant. This allows the `Column`
+/// enum to be used as a reference to a string in a Pregel program.
+///
+/// # Examples
+///
+/// ```rust
+/// use polars::prelude::*;
+/// use pregel_rs::pregel::Column::{Custom, Id};
+///
+/// let vertices = df![
+///     Id.as_ref() => [0, 1, 2, 3],
+///     Custom("value").as_ref() => [3, 6, 2, 1],
+/// ];
+///
+/// ```
+impl AsRef<str> for Column {
     fn as_ref(&self) -> &str {
         match self {
-            ColumnIdentifier::Id => "id",
-            ColumnIdentifier::Src => "src",
-            ColumnIdentifier::Dst => "dst",
-            ColumnIdentifier::Edge => "edge",
-            ColumnIdentifier::Msg => "msg",
-            ColumnIdentifier::Pregel => "_pregel_msg_",
-            ColumnIdentifier::Custom(id) => id,
+            Column::Id => "id",
+            Column::Src => "src",
+            Column::Dst => "dst",
+            Column::Edge => "edge",
+            Column::Msg => "msg",
+            Column::Pregel => "_pregel_msg_",
+            Column::Custom(id) => id,
+        }
+    }
+}
+
+impl Column {
+    fn alias(prefix: &Column, column_name: Column) -> String {
+        format!("{}.{}", prefix.as_ref(), column_name.as_ref())
+    }
+
+    /// This function returns an expression for a column identifier representing
+    ///  the source vertex in a Pregel graph.
+    ///
+    /// Arguments:
+    ///
+    /// * `column_name`: `column_name` is a parameter of type `ColumnIdentifier`. It is
+    /// used to identify the name of a column in a table or data source. The `src`
+    /// function takes this parameter and returns an expression that represents the
+    /// value of the column with the given name.
+    ///
+    /// Returns:
+    ///
+    /// The function `src` returns an `Expr` which represents a reference to the source
+    /// vertex ID column in a Pregel graph computation. The `Expr` is created using the
+    /// `col` function and the `alias` method of the `Pregel` struct to generate the
+    /// appropriate column name.
+    pub fn src(column_name: Column) -> Expr {
+        col(&Self::alias(&Column::Src, column_name))
+    }
+
+    /// This function returns an expression for a column identifier representing
+    ///  the destination vertex in a Pregel graph.
+    ///
+    /// Arguments:
+    ///
+    /// * `column_name`: `column_name` is a parameter of type `ColumnIdentifier` which
+    /// represents the name of a column in a table. It is used as an argument to the
+    /// `dst` function to create an expression that refers to the column with the given
+    /// name in the context of a Pregel computation.
+    ///
+    /// Returns:
+    ///
+    /// The function `dst` returns an expression that represents the value of the column
+    /// with the given `column_name` in the context of a `Pregel` graph computation. The
+    /// expression is created using the `col` function and the `alias` method of the
+    /// `Pregel` struct to ensure that the column name is properly qualified.
+    pub fn dst(column_name: Column) -> Expr {
+        col(&Self::alias(&Column::Dst, column_name))
+    }
+
+    /// This function returns an expression for a column name in a graph edge table.
+    ///
+    /// Arguments:
+    ///
+    /// * `column_name`: `column_name` is a parameter of type `ColumnIdentifier` which
+    /// represents the name of a column in a graph edge table. The `edge` function
+    /// returns an expression that refers to this column using the `col` function and
+    /// the `alias` function from the `Pregel` struct.
+    ///
+    /// Returns:
+    ///
+    /// The function `edge` returns an `Expr` which represents a reference to a column
+    /// in a graph edge table. The column name is passed as an argument to the function
+    /// and is used to construct the full column identifier using the `Column::alias`
+    /// method.
+    pub fn edge(column_name: Column) -> Expr {
+        col(&Self::alias(&Column::Edge, column_name))
+    }
+
+    /// This function returns an expression for a column name, either using a default
+    /// value or a specified value.
+    ///
+    /// Arguments:
+    ///
+    /// * `column_name`: An optional parameter of type `ColumnIdentifier`. It represents
+    /// the name of a column in a table. If it is `None`, the function returns a
+    /// reference to the `Pregel` column. If it is `Some(column_name)`, the function
+    /// returns a reference to a column with the name
+    ///
+    /// Returns:
+    ///
+    /// an `Expr` which is either a reference to the `ColumnIdentifier::Pregel` column
+    /// if `column_name` is `None`, or a reference to a column with an alias created by
+    /// `Column::alias` if `column_name` is `Some`.
+    pub fn msg(column_name: Option<Column>) -> Expr {
+        match column_name {
+            None => col(Column::Pregel.as_ref()),
+            Some(column_name) => col(&Self::alias(&Column::Msg, column_name)),
         }
     }
 }
@@ -42,15 +150,15 @@ impl AsRef<str> for ColumnIdentifier {
 /// is the identifier for the direction of the message. The `send_message`
 /// property is the function that determines which messages to send from a
 /// vertex to its neighbors.
-pub struct SendMessage {
+pub struct SendMessage<'a> {
     /// `message_direction` is the identifier for the direction of the message.
     pub message_direction: Expr,
     /// `send_message` is the function that determines which messages to send from a
     /// vertex to its neighbors.
-    pub send_message: Expr,
+    pub send_message: FnBox<'a>,
 }
 
-impl SendMessage {
+impl<'a> SendMessage<'a> {
     /// The function creates a new instance of the `SendMessage` struct with the
     /// specified message direction and send message expression.
     ///
@@ -65,15 +173,16 @@ impl SendMessage {
     /// Returns:
     ///
     /// A new instance of the `SendMessage` struct.
-    pub fn new(message_direction: MessageReceiver, send_message: Expr) -> Self {
+    pub fn new(message_direction: MessageReceiver, send_message: FnBox) -> SendMessage {
         // We make this in this manner because we want to use the `src.id` and `edge.dst` columns
         // in the send_messages function. This is because how polars works, when joining DataFrames,
         // it will keep only the left-hand side of the joins, thus, we need to use the `src.id` and
         // `edge.dst` columns to get the correct vertex IDs.
         let message_direction = match message_direction {
-            MessageReceiver::Src => Pregel::src(ColumnIdentifier::Id),
-            MessageReceiver::Dst => Pregel::edge(ColumnIdentifier::Dst),
+            MessageReceiver::Src => Column::src(Column::Id),
+            MessageReceiver::Dst => Column::edge(Column::Dst),
         };
+        let send_message = Box::new(send_message);
         // Now we create the `SendMessage` struct with everything set up.
         SendMessage {
             message_direction,
@@ -121,7 +230,14 @@ impl SendMessage {
 /// each iteration of the algorithm. The vertex program can take as input the current
 /// state of the vertex, the messages received from its neighbors or and any other
 /// relevant information.
-pub struct Pregel {
+///
+/// * `replace_nulls`: `replace_nulls` is an expression that defines how null values
+/// in the vertex DataFrame should be replaced. This is useful when the vertex
+/// DataFrame contains null values that need to be replaced during the execution of
+/// the Pregel algorithm. As an example, when not all vertices are connected to an
+/// edge, the edge DataFrame will contain null values in the `dst` column. These
+/// null values need to be replaced.
+pub struct Pregel<'a> {
     /// The `graph` property is a `GraphFrame` struct that represents the
     /// graph data structure used in the Pregel algorithm. It contains information about
     /// the vertices and edges of the graph.
@@ -131,7 +247,7 @@ pub struct Pregel {
     /// `vertex_column` is a property of the `PregelBuilder` struct that  identifies
     /// and locates a column where we apply some of the provided operations during
     /// the Pregel computation.
-    vertex_column: ColumnIdentifier,
+    vertex_column: Column,
     /// `initial_message` is an expression that defines the initial message that
     /// each vertex in the graph will receive before the computation starts.
     initial_message: Expr,
@@ -141,19 +257,26 @@ pub struct Pregel {
     /// the message will go from Src to Dst or vice-versa. The second expression represents
     /// the message sending function that determines which messages to send from a
     /// vertex to its neighbors.
-    send_messages: Vec<SendMessage>,
+    send_messages: Vec<SendMessage<'a>>,
     /// `aggregate_messages` is an expression that defines how messages sent to a
     /// vertex should be aggregated. In Pregel, messages are sent from one vertex
     /// to another and can be aggregated before being processed by the receiving
     /// vertex. The `aggregate_messages` expression specifies how these messages
     /// should be combined.
-    aggregate_messages: Expr,
+    aggregate_messages: FnBox<'a>,
     /// `v_prog` is an expression that defines the vertex program for the Pregel
     /// algorithm. It specifies the computation that each vertex performs during
     /// each iteration of the algorithm. The vertex program can take as input the
     /// current state of the vertex, the messages received from its neighbors or
     /// and any other relevant information.
-    v_prog: Expr,
+    v_prog: FnBox<'a>,
+    /// `replace_nulls` is an expression that defines how null values in the vertex
+    /// DataFrame should be replaced. This is useful when the vertex DataFrame
+    /// contains null values that need to be replaced during the execution of the
+    /// Pregel algorithm. As an example, when not all vertices are connected to an
+    /// edge, the edge DataFrame will contain null values in the `dst` column. These
+    /// null values need to be replaced.
+    replace_nulls: Expr,
 }
 
 /// The `PregelBuilder` struct represents a builder for configuring the Pregel
@@ -195,7 +318,14 @@ pub struct Pregel {
 /// each iteration of the algorithm. The vertex program can take as input the current
 /// state of the vertex, the messages received from its neighbors or and any other
 /// relevant information.
-pub struct PregelBuilder {
+///
+/// /// * `replace_nulls`: `replace_nulls` is an expression that defines how null values
+/// in the vertex DataFrame should be replaced. This is useful when the vertex
+/// DataFrame contains null values that need to be replaced during the execution of
+/// the Pregel algorithm. As an example, when not all vertices are connected to an
+/// edge, the edge DataFrame will contain null values in the `dst` column. These
+/// null values need to be replaced.
+pub struct PregelBuilder<'a> {
     /// The `graph` property is a `GraphFrame` struct that represents the
     /// graph data structure used in the Pregel algorithm. It contains information about
     /// the vertices and edges of the graph.
@@ -205,7 +335,7 @@ pub struct PregelBuilder {
     /// `vertex_column` is a property of the `PregelBuilder` struct that  identifies
     /// and locates a column where we apply some of the provided operations during
     /// the Pregel computation.
-    vertex_column: ColumnIdentifier,
+    vertex_column: Column,
     /// `initial_message` is an expression that defines the initial message that
     /// each vertex in the graph will receive before the computation starts.
     initial_message: Expr,
@@ -215,19 +345,26 @@ pub struct PregelBuilder {
     /// the message will go from Src to Dst or vice-versa. The second expression represents
     /// the message sending function that determines which messages to send from a
     /// vertex to its neighbors.
-    send_messages: Vec<SendMessage>,
+    send_messages: Vec<SendMessage<'a>>,
     /// `aggregate_messages` is an expression that defines how messages sent to a
     /// vertex should be aggregated. In Pregel, messages are sent from one vertex
     /// to another and can be aggregated before being processed by the receiving
     /// vertex. The `aggregate_messages` expression specifies how these messages
     /// should be combined.
-    aggregate_messages: Expr,
+    aggregate_messages: FnBox<'a>,
     /// `v_prog` is an expression that defines the vertex program for the Pregel
     /// algorithm. It specifies the computation that each vertex performs during
     /// each iteration of the algorithm. The vertex program can take as input the
     /// current state of the vertex, the messages received from its neighbors or
     /// and any other relevant information.
-    v_prog: Expr,
+    v_prog: FnBox<'a>,
+    /// `replace_nulls` is an expression that defines how null values in the vertex
+    /// DataFrame should be replaced. This is useful when the vertex DataFrame
+    /// contains null values that need to be replaced during the execution of the
+    /// Pregel algorithm. As an example, when not all vertices are connected to an
+    /// edge, the edge DataFrame will contain null values in the `dst` column. These
+    /// null values need to be replaced.
+    replace_nulls: Expr,
 }
 
 /// This code is defining an enumeration type `MessageReceiver` in Rust with
@@ -242,16 +379,20 @@ pub enum MessageReceiver {
     Dst,
 }
 
-impl From<MessageReceiver> for ColumnIdentifier {
-    fn from(message_receiver: MessageReceiver) -> ColumnIdentifier {
+/// The above code is implementing the `From` trait for the `Column` enum, which
+/// allows creating a `Column` instance from a `MessageReceiver` instance. The
+/// `match` statement maps the `MessageReceiver` variants to the corresponding
+/// `Column` variants.
+impl From<MessageReceiver> for Column {
+    fn from(message_receiver: MessageReceiver) -> Column {
         match message_receiver {
-            MessageReceiver::Src => ColumnIdentifier::Src,
-            MessageReceiver::Dst => ColumnIdentifier::Dst,
+            MessageReceiver::Src => Column::Src,
+            MessageReceiver::Dst => Column::Dst,
         }
     }
 }
 
-impl PregelBuilder {
+impl<'a> PregelBuilder<'a> {
     /// This function creates a new instance of a PregelBuilder with default values.
     ///
     /// Arguments:
@@ -266,11 +407,12 @@ impl PregelBuilder {
         PregelBuilder {
             graph,
             max_iterations: 10,
-            vertex_column: ColumnIdentifier::Custom("aux"),
+            vertex_column: Column::Custom("aux"),
             initial_message: Default::default(),
             send_messages: Default::default(),
-            aggregate_messages: Default::default(),
-            v_prog: Default::default(),
+            aggregate_messages: Box::new(Default::default),
+            v_prog: Box::new(Default::default),
+            replace_nulls: Default::default(),
         }
     }
 
@@ -312,7 +454,7 @@ impl PregelBuilder {
     /// instance that the method was called on. This allows for method chaining, where
     /// multiple methods can be called on the same struct instance in a single
     /// expression.
-    pub fn with_vertex_column(mut self, vertex_column: ColumnIdentifier) -> Self {
+    pub fn with_vertex_column(mut self, vertex_column: Column) -> Self {
         self.vertex_column = vertex_column;
         self
     }
@@ -346,7 +488,8 @@ impl PregelBuilder {
     /// ```rust
     /// use polars::prelude::*;
     /// use pregel_rs::graph_frame::GraphFrame;
-    /// use pregel_rs::pregel::ColumnIdentifier::{Custom, Dst, Id, Src};
+    /// use pregel_rs::pregel::Column;
+    /// use pregel_rs::pregel::Column::{Custom, Dst, Id, Src};
     /// use pregel_rs::pregel::{MessageReceiver, Pregel, PregelBuilder};
     /// use std::error::Error;
     ///
@@ -354,6 +497,7 @@ impl PregelBuilder {
     /// // this example, we send a message to the source of an edge and then to the destination of
     /// // the same edge. It has no real use case, but it demonstrates how to chain multiple calls.
     /// fn main() -> Result<(), Box<dyn Error>> {
+    ///
     ///     let edges = df![
     ///         Src.as_ref() => [0, 1, 1, 2, 2, 3],
     ///         Dst.as_ref() => [1, 0, 3, 1, 3, 2],
@@ -370,8 +514,8 @@ impl PregelBuilder {
     ///         .initial_message(lit(0))
     ///         .send_messages(MessageReceiver::Src, lit(1))
     ///         .send_messages(MessageReceiver::Dst, lit(-1))
-    ///         .aggregate_messages(Pregel::msg(None).sum())
-    ///         .v_prog(Pregel::msg(None) + lit(1))
+    ///         .aggregate_messages(Column::msg(None).sum())
+    ///         .v_prog(Column::msg(None) + lit(1))
     ///         .build();
     ///
     ///     Ok(println!("{:?}", pregel.run()))
@@ -394,7 +538,37 @@ impl PregelBuilder {
     /// multiple methods can be called on the same struct instance in a single
     /// expression.
     pub fn send_messages(mut self, to: MessageReceiver, send_messages: Expr) -> Self {
-        self.send_messages.push(SendMessage::new(to, send_messages));
+        self.send_messages.push(SendMessage::new(
+            to,
+            Box::new(move || send_messages.clone()),
+        ));
+        self
+    }
+
+    /// This is a Rust function that adds a new message to be sent to a message receiver
+    /// using a closure that returns an expression.
+    ///
+    /// Arguments:
+    ///
+    /// * `to`: `to` is a parameter of type `MessageReceiver` which represents the
+    /// recipient of the message being sent. It could be an email address, phone number,
+    /// or any other means of communication.
+    ///
+    /// * `send_messages`: `send_messages` is a closure that takes no arguments and
+    /// returns an `Expr`. It is used to generate the messages that will be sent to the
+    /// `to` message receiver. The closure is passed as an argument to the
+    /// `send_messages_function` method and is stored in a `SendMessage` struct
+    ///
+    /// Returns:
+    ///
+    /// The `Self` object is being returned, which allows for method chaining.
+    pub fn send_messages_function(
+        mut self,
+        to: MessageReceiver,
+        send_messages: impl FnMut() -> Expr + 'a,
+    ) -> Self {
+        self.send_messages
+            .push(SendMessage::new(to, Box::new(send_messages)));
         self
     }
 
@@ -416,7 +590,30 @@ impl PregelBuilder {
     /// multiple methods can be called on the same struct instance in a single
     /// expression.
     pub fn aggregate_messages(mut self, aggregate_messages: Expr) -> Self {
-        self.aggregate_messages = aggregate_messages;
+        self.aggregate_messages = Box::new(move || aggregate_messages.clone());
+        self
+    }
+
+    /// This function sets the aggregate_messages field of a struct to a closure that
+    /// returns an Expr.
+    ///
+    /// Arguments:
+    ///
+    /// * `aggregate_messages`: `aggregate_messages` is a closure that takes no
+    /// arguments and returns an `Expr` object. The closure is passed as an argument to
+    /// the `aggregate_messages_function` method and is stored in the
+    /// `self.aggregate_messages` field. The closure is expected to be implemented by
+    /// the caller and will be used
+    ///
+    /// Returns:
+    ///
+    /// The `Self` object is being returned. This allows for method chaining, where
+    /// multiple methods can be called on the same object in a single expression.
+    pub fn aggregate_messages_function(
+        mut self,
+        aggregate_messages: impl FnMut() -> Expr + 'a,
+    ) -> Self {
+        self.aggregate_messages = Box::new(aggregate_messages);
         self
     }
 
@@ -437,7 +634,48 @@ impl PregelBuilder {
     /// multiple methods can be called on the same struct instance in a single
     /// expression.
     pub fn v_prog(mut self, v_prog: Expr) -> Self {
-        self.v_prog = v_prog;
+        self.v_prog = Box::new(move || v_prog.clone());
+        self
+    }
+
+    /// This is a Rust function that takes a closure that returns an expression and sets
+    /// it as a field in a struct.
+    ///
+    /// Arguments:
+    ///
+    /// * `v_prog`: `v_prog` is a closure that takes no arguments and returns an `Expr`
+    /// object. The closure is passed as an argument to the `v_prog_function` method.
+    /// The `impl FnMut() -> Expr + 'a` syntax specifies that the closure must be
+    /// mutable (`FnMut`) and that it must not capture any variables from the enclosing
+    /// scope (`'a`). The closure is stored in the `self.v_prog` field of the struct.
+    ///
+    /// Returns:
+    ///
+    /// The `Self` object is being returned. This allows for method chaining, where
+    /// multiple methods can be called on the same object in a single expression.
+    pub fn v_prog_function(mut self, v_prog: impl FnMut() -> Expr + 'a) -> Self {
+        self.v_prog = Box::new(v_prog);
+        self
+    }
+
+    /// This function sets the value of a field called "replace_nulls" in a struct to a
+    /// given expression and returns the modified struct.
+    ///
+    /// Arguments:
+    ///
+    /// * `replace_nulls`: `replace_nulls` is a parameter of type `Expr` that is used in
+    /// a method of a struct. The method takes ownership of the struct (`self`) and the
+    /// `replace_nulls` parameter, and sets the `replace_nulls` field of the struct to the
+    /// value of the `replace_nulls` parameter.
+    ///
+    /// Returns:
+    ///
+    /// The `replace_nulls` method returns `Self`, which refers to the same struct
+    /// instance that the method was called on. This allows for method chaining, where
+    /// multiple methods can be called on the same struct instance in a single
+    /// expression.
+    pub fn replace_nulls(mut self, replace_nulls: Expr) -> Self {
+        self.replace_nulls = replace_nulls;
         self
     }
 
@@ -454,13 +692,14 @@ impl PregelBuilder {
     /// ```rust
     /// use polars::prelude::*;
     /// use pregel_rs::graph_frame::GraphFrame;
-    /// use pregel_rs::pregel::ColumnIdentifier::{Custom, Dst, Id, Src};
+    /// use pregel_rs::pregel::Column;
+    /// use pregel_rs::pregel::Column::{Custom, Dst, Id, Src};
     /// use pregel_rs::pregel::{MessageReceiver, Pregel, PregelBuilder};
     /// use std::error::Error;
     ///
     /// // Simple example of a Pregel algorithm that finds the maximum value in a graph.
     /// fn main() -> Result<(), Box<dyn Error>> {
-    ///     let edges = df![
+    /// let edges = df![
     ///         Src.as_ref() => [0, 1, 1, 2, 2, 3],
     ///         Dst.as_ref() => [1, 0, 3, 1, 3, 2],
     ///     ]?;
@@ -474,9 +713,9 @@ impl PregelBuilder {
     ///         .max_iterations(4)
     ///         .with_vertex_column(Custom("max_value"))
     ///         .initial_message(col(Custom("value").as_ref()))
-    ///         .send_messages(MessageReceiver::Dst, Pregel::src(Custom("max_value")))
-    ///         .aggregate_messages(Pregel::msg(None).max())
-    ///         .v_prog(max_exprs([col(Custom("max_value").as_ref()), Pregel::msg(None)]))
+    ///         .send_messages(MessageReceiver::Dst, Column::src(Custom("max_value")))
+    ///         .aggregate_messages(Column::msg(None).max())
+    ///         .v_prog(max_exprs([col(Custom("max_value").as_ref()), Column::msg(None)]))
     ///         .build();
     ///
     ///     Ok(println!("{}", pregel.run()?))
@@ -488,7 +727,7 @@ impl PregelBuilder {
     /// The `build` method is returning an instance of the `Pregel` struct with the
     /// values of the fields set to the values of the corresponding fields in the
     /// `Builder` struct.
-    pub fn build(self) -> Pregel {
+    pub fn build(self) -> Pregel<'a> {
         Pregel {
             graph: self.graph,
             max_iterations: self.max_iterations,
@@ -497,96 +736,12 @@ impl PregelBuilder {
             send_messages: self.send_messages,
             aggregate_messages: self.aggregate_messages,
             v_prog: self.v_prog,
+            replace_nulls: self.replace_nulls,
         }
     }
 }
 
-impl Pregel {
-    fn alias(prefix: &ColumnIdentifier, column_name: ColumnIdentifier) -> String {
-        format!("{}.{}", prefix.as_ref(), column_name.as_ref())
-    }
-
-    /// This function returns an expression for a column identifier representing
-    ///  the source vertex in a Pregel graph.
-    ///
-    /// Arguments:
-    ///
-    /// * `column_name`: `column_name` is a parameter of type `ColumnIdentifier`. It is
-    /// used to identify the name of a column in a table or data source. The `src`
-    /// function takes this parameter and returns an expression that represents the
-    /// value of the column with the given name.
-    ///
-    /// Returns:
-    ///
-    /// The function `src` returns an `Expr` which represents a reference to the source
-    /// vertex ID column in a Pregel graph computation. The `Expr` is created using the
-    /// `col` function and the `alias` method of the `Pregel` struct to generate the
-    /// appropriate column name.
-    pub fn src(column_name: ColumnIdentifier) -> Expr {
-        col(&Pregel::alias(&ColumnIdentifier::Src, column_name))
-    }
-
-    /// This function returns an expression for a column identifier representing
-    ///  the destination vertex in a Pregel graph.
-    ///
-    /// Arguments:
-    ///
-    /// * `column_name`: `column_name` is a parameter of type `ColumnIdentifier` which
-    /// represents the name of a column in a table. It is used as an argument to the
-    /// `dst` function to create an expression that refers to the column with the given
-    /// name in the context of a Pregel computation.
-    ///
-    /// Returns:
-    ///
-    /// The function `dst` returns an expression that represents the value of the column
-    /// with the given `column_name` in the context of a `Pregel` graph computation. The
-    /// expression is created using the `col` function and the `alias` method of the
-    /// `Pregel` struct to ensure that the column name is properly qualified.
-    pub fn dst(column_name: ColumnIdentifier) -> Expr {
-        col(&Pregel::alias(&ColumnIdentifier::Dst, column_name))
-    }
-
-    /// This function returns an expression for a column name in a graph edge table.
-    ///
-    /// Arguments:
-    ///
-    /// * `column_name`: `column_name` is a parameter of type `ColumnIdentifier` which
-    /// represents the name of a column in a graph edge table. The `edge` function
-    /// returns an expression that refers to this column using the `col` function and
-    /// the `alias` function from the `Pregel` struct.
-    ///
-    /// Returns:
-    ///
-    /// The function `edge` returns an `Expr` which represents a reference to a column
-    /// in a graph edge table. The column name is passed as an argument to the function
-    /// and is used to construct the full column identifier using the `Pregel::alias`
-    /// method.
-    pub fn edge(column_name: ColumnIdentifier) -> Expr {
-        col(&Pregel::alias(&ColumnIdentifier::Edge, column_name))
-    }
-
-    /// This function returns an expression for a column name, either using a default
-    /// value or a specified value.
-    ///
-    /// Arguments:
-    ///
-    /// * `column_name`: An optional parameter of type `ColumnIdentifier`. It represents
-    /// the name of a column in a table. If it is `None`, the function returns a
-    /// reference to the `Pregel` column. If it is `Some(column_name)`, the function
-    /// returns a reference to a column with the name
-    ///
-    /// Returns:
-    ///
-    /// an `Expr` which is either a reference to the `ColumnIdentifier::Pregel` column
-    /// if `column_name` is `None`, or a reference to a column with an alias created by
-    /// `Pregel::alias` if `column_name` is `Some`.
-    pub fn msg(column_name: Option<ColumnIdentifier>) -> Expr {
-        match column_name {
-            None => col(ColumnIdentifier::Pregel.as_ref()),
-            Some(column_name) => col(&Pregel::alias(&ColumnIdentifier::Msg, column_name)),
-        }
-    }
-
+impl<'a> Pregel<'a> {
     /// Represents the Pregel model for large-scale graph processing, introduced
     /// by Google in a paper titled "Pregel: A System for Large-Scale Graph
     /// Processing" in 2010.
@@ -636,30 +791,7 @@ impl Pregel {
     ///
     /// a `PolarsResult<DataFrame>`, which is a result type that can either contain
     /// the resulting `DataFrame` or an error of type `PolarsError`.
-    pub fn run(self) -> PolarsResult<DataFrame> {
-        // We create a tuple where we store the column names of the `send_messages` DataFrame. We use
-        // the `alias` method to ensure that the column names are properly qualified. We also
-        // do the same for the `aggregate_messages` Expr. And the same with the `v_prog` Expr.
-        let (mut send_messages_ids, mut send_messages_msg): (Vec<Expr>, Vec<Expr>) = self
-            .send_messages
-            .iter()
-            .map(|send_message| {
-                let message_direction = &send_message.message_direction;
-                let send_message_expr = &send_message.send_message;
-                (
-                    message_direction
-                        .to_owned()
-                        .alias(&Self::alias(&ColumnIdentifier::Msg, ColumnIdentifier::Id)),
-                    send_message_expr
-                        .to_owned()
-                        .alias(ColumnIdentifier::Pregel.as_ref()),
-                )
-            })
-            .unzip();
-        let aggregate_messages = self
-            .aggregate_messages
-            .alias(ColumnIdentifier::Pregel.as_ref());
-        let v_prog = self.v_prog.alias(self.vertex_column.as_ref());
+    pub fn run(mut self) -> PolarsResult<DataFrame> {
         // We create a DataFrame that contains the edges of the graph. This DataFrame is used to
         // compute the triplets of the graph, which are used to send messages to the neighboring
         // vertices of each vertex in the graph. For us to do so, we select all the columns of the
@@ -668,7 +800,7 @@ impl Pregel {
             .graph
             .edges
             .lazy()
-            .select([all().prefix(&format!("{}.", ColumnIdentifier::Edge.as_ref()))]);
+            .select([all().prefix(&format!("{}.", Column::Edge.as_ref()))]);
         // We create a DataFrame that contains the vertices of the graph
         let vertices = &self.graph.vertices.lazy();
         // We start the execution of the algorithm from the super-step 0; that is, all the nodes
@@ -676,19 +808,23 @@ impl Pregel {
         // The initial messages are stored in the `initial_message` column of the `current_vertices` DataFrame.
         // We use the `lazy` method to create a lazy DataFrame. This is done to avoid the execution of
         // the DataFrame until the end of the algorithm.
+        let initial_message = &self.initial_message;
         let mut current_vertices = vertices
             .to_owned()
             .select(vec![
                 all(), // we select all the columns of the graph vertices
-                self.initial_message.alias(self.vertex_column.as_ref()), // initial message column name is set by the user
+                initial_message
+                    .to_owned()
+                    .alias(self.vertex_column.as_ref()), // initial message column name is set by the user
             ])
             .collect()?;
         // After computing the super-step 0, we start the execution of the Pregel algorithm. This
         // execution is performed until all the nodes vote to halt, or the number of iterations is
         // greater than the maximum number of iterations set by the user at the initialization of
         // the model (see the `Pregel::new` method). We start by setting the number of iterations to 1.
+        println!("current_vertices: {:?}", current_vertices);
         let mut iteration = 1;
-        // TODO: check that nodes are not halted. If so, we remove them from the `current_vertices` DataFrame.
+        // TODO: check that nodes are not halted.
         while iteration <= self.max_iterations {
             // We create a DataFrame that contains the triplets of the graph. Those triplets are
             // computed by joining the `current_vertices` DataFrame with the `edges` DataFrame
@@ -699,55 +835,75 @@ impl Pregel {
             let current_vertices_df = &current_vertices.lazy();
             let triplets_df = current_vertices_df
                 .to_owned()
-                .select([all().prefix(&format!("{}.", ColumnIdentifier::Src.as_ref()))])
+                .select([all().prefix(&format!("{}.", Column::Src.as_ref()))])
                 .inner_join(
                     edges.to_owned(),
-                    Self::src(ColumnIdentifier::Id), // src column of the current_vertices DataFrame
-                    Self::edge(ColumnIdentifier::Src), // src column of the edges DataFrame
+                    Column::src(Column::Id), // src column of the current_vertices DataFrame
+                    Column::edge(Column::Src), // src column of the edges DataFrame
                 )
                 .inner_join(
                     current_vertices_df
                         .to_owned()
-                        .select([all().prefix(&format!("{}.", ColumnIdentifier::Dst.as_ref()))]),
-                    Self::edge(ColumnIdentifier::Dst), // dst column of the resulting DataFrame
-                    Self::dst(ColumnIdentifier::Id), // id column of the current_vertices DataFrame
+                        .select([all().prefix(&format!("{}.", Column::Dst.as_ref()))]),
+                    Column::edge(Column::Dst), // dst column of the resulting DataFrame
+                    Column::dst(Column::Id),   // id column of the current_vertices DataFrame
                 );
+            println!("triplets_df: {:?}", triplets_df.clone().collect());
             // We create a DataFrame that contains the messages sent by the vertices. The messages
             // are computed by performing an aggregation on the `triplets_df` DataFrame. The aggregation
             // is performed on the `msg` column of the `triplets_df` DataFrame, and the aggregation
             // function is the one set by the user at the initialization of the model.
+            // We create a tuple where we store the column names of the `send_messages` DataFrame. We use
+            // the `alias` method to ensure that the column names are properly qualified. We also
+            // do the same for the `aggregate_messages` Expr. And the same with the `v_prog` Expr.
+            let (mut send_messages_ids, mut send_messages_msg): (Vec<Expr>, Vec<Expr>) = self
+                .send_messages
+                .iter_mut()
+                .map(|send_message| {
+                    let message_direction = &send_message.message_direction;
+                    let send_message_expr = &mut send_message.send_message;
+                    (
+                        message_direction
+                            .to_owned()
+                            .alias(&Column::alias(&Column::Msg, Column::Id)),
+                        send_message_expr().alias(Column::Pregel.as_ref()),
+                    )
+                })
+                .unzip();
             let send_messages = &mut send_messages_ids; // we create a mutable reference to the `send_messages_ids` Vector
             let send_messages_msg_df = &mut send_messages_msg; // we create a mutable reference to the `send_messages_msg` Vector
             send_messages.append(send_messages_msg_df); // we append the `send_messages_msg` Vector to the `send_messages` Vector
-            let aggregate_messages_df = &aggregate_messages;
+            let aggregate_messages = &mut self.aggregate_messages;
             let message_df = triplets_df
                 .select(send_messages)
-                .groupby([Self::msg(Some(ColumnIdentifier::Id))])
-                .agg([aggregate_messages_df.to_owned()]);
+                .groupby([Column::msg(Some(Column::Id))])
+                .agg([aggregate_messages().alias(Column::Pregel.as_ref())]);
+            println!("message_df: {:?}", message_df.clone().collect());
             // We Compute the new values for the vertices. Note that we have to check for possibly
             // null values after performing the outer join. This is, columns where the join key does
             // not exist in the source DataFrame. In case we find any; for example, given a certain
             // node having no incoming edges, we have to replace the null value by 0 for the aggregation
             // to work properly.
-            let v_prog_df = &v_prog;
+            let v_prog = &mut self.v_prog;
             let vertex_columns = current_vertices_df
                 .to_owned()
                 .outer_join(
                     message_df,
-                    col(ColumnIdentifier::Id.as_ref()), // id column of the current_vertices DataFrame
-                    Self::msg(Some(ColumnIdentifier::Id)), // msg.id column of the message_df DataFrame
+                    col(Column::Id.as_ref()), // id column of the current_vertices DataFrame
+                    Column::msg(Some(Column::Id)), // msg.id column of the message_df DataFrame
                 )
                 .with_column(
-                    // we replace the null values by 0
-                    when(Self::msg(None).is_null())
-                        .then(0)
-                        .otherwise(Self::msg(None))
-                        .alias(ColumnIdentifier::Pregel.as_ref()),
+                    // we replace the null values by 0 for the aggregation to work properly
+                    when(Column::msg(None).is_null()) // if a node has no incoming edges, the msg column is null
+                        .then(self.replace_nulls.to_owned())
+                        .otherwise(Column::msg(None))
+                        .alias(Column::Pregel.as_ref()),
                 )
                 .select(vec![
-                    col(ColumnIdentifier::Id.as_ref()),
-                    v_prog_df.to_owned(),
+                    col(Column::Id.as_ref()),
+                    v_prog().alias(self.vertex_column.as_ref()),
                 ]);
+            println!("vertex_columns: {:?}", vertex_columns.clone().collect());
             // We update the `current_vertices` DataFrame with the new values for the vertices. We
             // do so by performing an inner join between the `current_vertices` DataFrame and the
             // `vertex_columns` DataFrame. The join is performed on the `id` column of the
@@ -756,8 +912,8 @@ impl Pregel {
                 .to_owned()
                 .inner_join(
                     vertex_columns,
-                    col(ColumnIdentifier::Id.as_ref()),
-                    col(ColumnIdentifier::Id.as_ref()),
+                    col(Column::Id.as_ref()),
+                    col(Column::Id.as_ref()),
                 )
                 .collect()?;
 
@@ -771,14 +927,14 @@ impl Pregel {
 #[cfg(test)]
 mod tests {
     use crate::graph_frame::GraphFrame;
-    use crate::pregel::{ColumnIdentifier, MessageReceiver, Pregel, PregelBuilder, SendMessage};
+    use crate::pregel::{Column, MessageReceiver, Pregel, PregelBuilder, SendMessage};
     use polars::prelude::*;
     use std::error::Error;
 
     fn pagerank_graph() -> Result<GraphFrame, String> {
         let edges = match df![
-            ColumnIdentifier::Src.as_ref() => [0, 0, 1, 2, 3, 4, 4, 4],
-            ColumnIdentifier::Dst.as_ref() => [1, 2, 2, 3, 3, 1, 2, 3],
+            Column::Src.as_ref() => [0, 0, 1, 2, 3, 4, 4, 4],
+            Column::Dst.as_ref() => [1, 2, 2, 3, 3, 1, 2, 3],
         ] {
             Ok(edges) => edges,
             Err(_) => return Err(String::from("Error creating the edges DataFrame")),
@@ -804,23 +960,23 @@ mod tests {
         }
     }
 
-    fn pagerank_builder(iterations: u8) -> Result<Pregel, Box<dyn Error>> {
+    fn pagerank_builder<'a>(iterations: u8) -> Result<Pregel<'a>, Box<dyn Error>> {
         let graph = pagerank_graph()?;
         let damping_factor = 0.85;
-        let num_vertices: f64 = graph.vertices.column(ColumnIdentifier::Id.as_ref())?.len() as f64;
+        let num_vertices: f64 = graph.vertices.column(Column::Id.as_ref())?.len() as f64;
 
         Ok(PregelBuilder::new(graph)
             .max_iterations(iterations)
-            .with_vertex_column(ColumnIdentifier::Custom("rank"))
+            .with_vertex_column(Column::Custom("rank"))
             .initial_message(lit(1.0 / num_vertices))
+            .replace_nulls(lit(0.0))
             .send_messages(
                 MessageReceiver::Dst,
-                Pregel::src(ColumnIdentifier::Custom("rank"))
-                    / Pregel::src(ColumnIdentifier::Custom("out_degree")),
+                Column::src(Column::Custom("rank")) / Column::src(Column::Custom("out_degree")),
             )
-            .aggregate_messages(Pregel::msg(None).sum())
+            .aggregate_messages(Column::msg(None).sum())
             .v_prog(
-                Pregel::msg(None) * lit(damping_factor)
+                Column::msg(None) * lit(damping_factor)
                     + lit((1.0 - damping_factor) / num_vertices),
             )
             .build())
@@ -886,16 +1042,16 @@ mod tests {
 
     fn max_value_graph() -> Result<GraphFrame, String> {
         let edges = match df![
-            ColumnIdentifier::Src.as_ref() => [0, 1, 1, 2, 2, 3],
-            ColumnIdentifier::Dst.as_ref() => [1, 0, 3, 1, 3, 2],
+            Column::Src.as_ref() => [0, 1, 1, 2, 2, 3],
+            Column::Dst.as_ref() => [1, 0, 3, 1, 3, 2],
         ] {
             Ok(edges) => edges,
             Err(_) => return Err(String::from("Error creating the edges DataFrame")),
         };
 
         let vertices = match df![
-            ColumnIdentifier::Id.as_ref() => [0, 1, 2, 3],
-            ColumnIdentifier::Custom("value").as_ref() => [3, 6, 2, 1],
+            Column::Id.as_ref() => [0, 1, 2, 3],
+            Column::Custom("value").as_ref() => [3, 6, 2, 1],
         ] {
             Ok(vertices) => vertices,
             Err(_) => return Err(String::from("Error creating the vertices DataFrame")),
@@ -907,21 +1063,21 @@ mod tests {
         }
     }
 
-    fn max_value_builder(iterations: u8) -> Result<Pregel, String> {
+    fn max_value_builder<'a>(iterations: u8) -> Result<Pregel<'a>, String> {
         Ok(Pregel {
             graph: max_value_graph()?,
             max_iterations: iterations,
-            vertex_column: ColumnIdentifier::Custom("max_value"),
-            initial_message: col(ColumnIdentifier::Custom("value").as_ref()),
+            vertex_column: Column::Custom("max_value"),
+            initial_message: col(Column::Custom("value").as_ref()),
             send_messages: vec![SendMessage::new(
                 MessageReceiver::Dst,
-                Pregel::src(ColumnIdentifier::Custom("value")),
+                Box::new(|| Column::src(Column::Custom("value"))),
             )],
-            aggregate_messages: Pregel::msg(None).max(),
-            v_prog: max_exprs([
-                col(ColumnIdentifier::Custom("max_value").as_ref()),
-                Pregel::msg(None),
-            ]),
+            aggregate_messages: Box::new(|| Column::msg(None).max()),
+            v_prog: Box::new(|| {
+                max_exprs([col(Column::Custom("max_value").as_ref()), Column::msg(None)])
+            }),
+            replace_nulls: lit(0),
         })
     }
 
@@ -986,7 +1142,7 @@ mod tests {
         // useful to test the Pregel model.
         match PregelBuilder::new(graph)
             .max_iterations(4)
-            .with_vertex_column(ColumnIdentifier::Custom("aux"))
+            .with_vertex_column(Column::Custom("aux"))
             .initial_message(lit(0)) // we pass the Undefined state to all vertices
             .send_messages(MessageReceiver::Src, lit(0))
             .aggregate_messages(lit(0))
@@ -1005,12 +1161,12 @@ mod tests {
 
         let pregel = match PregelBuilder::new(graph)
             .max_iterations(4)
-            .with_vertex_column(ColumnIdentifier::Custom("aux"))
+            .with_vertex_column(Column::Custom("aux"))
             .initial_message(lit(0))
             .send_messages(MessageReceiver::Src, lit(1))
             .send_messages(MessageReceiver::Dst, lit(-1))
-            .aggregate_messages(Pregel::msg(None).sum())
-            .v_prog(Pregel::msg(None) + lit(1))
+            .aggregate_messages(Column::msg(None).sum())
+            .v_prog(Column::msg(None) + lit(1))
             .build()
             .run()
         {

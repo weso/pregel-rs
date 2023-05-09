@@ -1,4 +1,4 @@
-use crate::pregel::ColumnIdentifier::{Custom, Dst, Id, Src};
+use crate::pregel::Column::{Custom, Dst, Id, Src};
 use polars::prelude::*;
 use std::fmt::{Debug, Display, Formatter};
 use std::{error, fmt};
@@ -20,6 +20,11 @@ pub struct GraphFrame {
     pub edges: DataFrame,
 }
 
+/// A new type alias `Result<T>` that is equivalent to the
+/// `std::result::Result<T, GraphFrameError>` type. This is a common pattern in
+/// Rust to create a shorthand for a longer type name. The `Result<T>` type is used
+/// throughout the `GraphFrame` struct to represent the result of a function that
+/// can either return a value of type `T` or an error of type `GraphFrameError`.
 type Result<T> = std::result::Result<T, GraphFrameError>;
 
 /// `GraphFrameError` is an enum that represents the different types of errors that
@@ -35,6 +40,12 @@ pub enum GraphFrameError {
     MissingColumn(MissingColumnError),
 }
 
+/// This is an implementation of the `Display` trait for the `GraphFrameError` enum.
+/// It allows instances of the `GraphFrameError` enum to be formatted as strings
+/// when they need to be displayed to the user. The `fmt` method takes a mutable
+/// reference to a `Formatter` object and returns a `fmt::Result`. It matches on the
+/// enum variants and calls the `Display` trait's `fmt` method on the inner error
+/// object to format the error message.
 impl Display for GraphFrameError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
@@ -44,6 +55,12 @@ impl Display for GraphFrameError {
     }
 }
 
+/// This is an implementation of the `Error` trait for a custom error type
+/// `GraphFrameError`. It defines the `source` method which returns the underlying
+/// cause of the error as an optional reference to a `dyn error::Error` trait
+/// object. If the error is caused by a `FromPolars` error, it returns the reference
+/// to the underlying error. If the error is caused by a missing column, it returns
+/// `None`.
 impl error::Error for GraphFrameError {
     fn source(&self) -> Option<&(dyn error::Error + 'static)> {
         match *self {
@@ -192,6 +209,11 @@ impl GraphFrame {
     }
 }
 
+/// This is the implementation of the `Display` trait for a `GraphFrame` struct.
+/// This allows instances of the `GraphFrame` struct to be printed in a formatted
+/// way using the `println!` macro or other formatting macros. The `fmt` method is
+/// defined to format the output as a string that includes the vertices and edges of
+/// the graph.
 impl Display for GraphFrame {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(
