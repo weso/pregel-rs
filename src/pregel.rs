@@ -822,7 +822,6 @@ impl<'a> Pregel<'a> {
         // execution is performed until all the nodes vote to halt, or the number of iterations is
         // greater than the maximum number of iterations set by the user at the initialization of
         // the model (see the `Pregel::new` method). We start by setting the number of iterations to 1.
-        println!("current_vertices: {:?}", current_vertices);
         let mut iteration = 1;
         // TODO: check that nodes are not halted.
         while iteration <= self.max_iterations {
@@ -848,7 +847,6 @@ impl<'a> Pregel<'a> {
                     Column::edge(Column::Dst), // dst column of the resulting DataFrame
                     Column::dst(Column::Id),   // id column of the current_vertices DataFrame
                 );
-            println!("triplets_df: {:?}", triplets_df.clone().collect());
             // We create a DataFrame that contains the messages sent by the vertices. The messages
             // are computed by performing an aggregation on the `triplets_df` DataFrame. The aggregation
             // is performed on the `msg` column of the `triplets_df` DataFrame, and the aggregation
@@ -878,7 +876,6 @@ impl<'a> Pregel<'a> {
                 .select(send_messages)
                 .groupby([Column::msg(Some(Column::Id))])
                 .agg([aggregate_messages().alias(Column::Pregel.as_ref())]);
-            println!("message_df: {:?}", message_df.clone().collect());
             // We Compute the new values for the vertices. Note that we have to check for possibly
             // null values after performing the outer join. This is, columns where the join key does
             // not exist in the source DataFrame. In case we find any; for example, given a certain
@@ -903,7 +900,6 @@ impl<'a> Pregel<'a> {
                     col(Column::Id.as_ref()),
                     v_prog().alias(self.vertex_column.as_ref()),
                 ]);
-            println!("vertex_columns: {:?}", vertex_columns.clone().collect());
             // We update the `current_vertices` DataFrame with the new values for the vertices. We
             // do so by performing an inner join between the `current_vertices` DataFrame and the
             // `vertex_columns` DataFrame. The join is performed on the `id` column of the
@@ -985,10 +981,7 @@ mod tests {
     fn agg_pagerank(pagerank: Pregel) -> Result<f64, String> {
         let result = match pagerank.run() {
             Ok(result) => result,
-            Err(error) => {
-                println!("{}", error);
-                return Err(String::from("Error running the PageRank algorithm"));
-            }
+            Err(_) => return Err(String::from("Error running the PageRank algorithm")),
         };
         let rank = match result.column("rank") {
             Ok(rank) => rank,

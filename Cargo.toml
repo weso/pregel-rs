@@ -13,7 +13,6 @@ categories = ["algorithms", "database", "mathematics", "science"]
 
 [dependencies]
 polars = { version = "0.29.0", features = ["lazy"] }
-ego-tree = "0.6.2"
 
 [package.metadata.docs.rs]
 features = []
