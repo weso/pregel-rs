@@ -63,7 +63,7 @@ of your project. You can add the following line to your `Cargo.toml` file:
 
 ```toml
 [dependencies]
-pregel-rs = "0.0.5"
+pregel-rs = "0.0.7"
 ```
 
 4. _Implement your graph algorithm_: Now you can start implementing your graph

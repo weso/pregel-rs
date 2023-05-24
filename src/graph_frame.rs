@@ -153,14 +153,14 @@ impl GraphFrame {
     /// `GraphFrame` struct.
     pub fn from_edges(edges: DataFrame) -> Result<Self> {
         let srcs = edges
-            .clone()
+            .clone() // this is because cloning a DataFrame is cheap
             .lazy()
             .select([col(Src.as_ref()).alias(Id.as_ref())]);
         let dsts = edges
-            .clone()
+            .clone() // this is because cloning a DataFrame is cheap
             .lazy()
             .select([col(Dst.as_ref()).alias(Id.as_ref())]);
-        let vertices = concat([srcs, dsts], false, true)?
+        let vertices = concat([srcs, dsts], true, true)?
             .unique(
                 Some(vec![Id.as_ref().to_string()]),
                 UniqueKeepStrategy::First,

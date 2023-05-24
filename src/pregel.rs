@@ -796,7 +796,7 @@ impl<'a> Pregel<'a> {
         // compute the triplets of the graph, which are used to send messages to the neighboring
         // vertices of each vertex in the graph. For us to do so, we select all the columns of the
         // graph edges and we prefix them with the `Edge` column name.
-        let edges = self
+        let edges = &self
             .graph
             .edges
             .lazy()
@@ -823,8 +823,8 @@ impl<'a> Pregel<'a> {
         // greater than the maximum number of iterations set by the user at the initialization of
         // the model (see the `Pregel::new` method). We start by setting the number of iterations to 1.
         let mut iteration = 1;
-        // TODO: check that nodes are not halted.
         while iteration <= self.max_iterations {
+            // TODO: check that nodes are not halted.
             // We create a DataFrame that contains the triplets of the graph. Those triplets are
             // computed by joining the `current_vertices` DataFrame with the `edges` DataFrame
             // first, and with the `current_vertices` second. The first join is performed on the `src`
@@ -836,7 +836,7 @@ impl<'a> Pregel<'a> {
                 .to_owned()
                 .select([all().prefix(&format!("{}.", Column::Src.as_ref()))])
                 .inner_join(
-                    edges.to_owned(),
+                    edges.to_owned().select([all()]),
                     Column::src(Column::Id), // src column of the current_vertices DataFrame
                     Column::edge(Column::Src), // src column of the edges DataFrame
                 )
