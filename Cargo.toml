@@ -1,6 +1,6 @@
 [package]
 name = "pregel-rs"
-version = "0.0.7"
+version = "0.0.8"
 authors = [ "Ángel Iglesias Préstamo <angel.iglesias.prestamo@gmail.com>" ]
 description = "A Graph library written in Rust for implementing your own algorithms in a Pregel fashion"
 documentation = "https://docs.rs/crate/pregel-rs/latest"
@@ -12,7 +12,7 @@ keywords = ["pregel", "graph", "pagerank", "polars", "algorithms"]
 categories = ["algorithms", "database", "mathematics", "science"]
 
 [dependencies]
-polars = { version = "0.29.0", features = ["lazy"] }
+polars = { version = "0.29.0", features = ["lazy", "streaming"] }
 
 [package.metadata.docs.rs]
 features = []

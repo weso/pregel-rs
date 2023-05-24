@@ -817,6 +817,7 @@ impl<'a> Pregel<'a> {
                     .to_owned()
                     .alias(self.vertex_column.as_ref()), // initial message column name is set by the user
             ])
+            .with_streaming(true)
             .collect()?;
         // After computing the super-step 0, we start the execution of the Pregel algorithm. This
         // execution is performed until all the nodes vote to halt, or the number of iterations is
@@ -911,6 +912,7 @@ impl<'a> Pregel<'a> {
                     col(Column::Id.as_ref()),
                     col(Column::Id.as_ref()),
                 )
+                .with_streaming(true)
                 .collect()?;
 
             iteration += 1; // increment the counter so we now which iteration is being executed
