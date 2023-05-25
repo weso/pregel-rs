@@ -14,11 +14,13 @@ categories = ["algorithms", "database", "mathematics", "science"]
 [dependencies]
 polars = { version = "0.29.0", features = ["lazy", "streaming", "parquet", "performant", "chunked_ids"] }
 
-[target.'cfg(not(target_env = "msvc"))'.dependencies]
-jemallocator = "0.5.0"
-
 [package.metadata.docs.rs]
 features = []
 all-features = false
 no-default-features = true
 default-target = "x86_64-unknown-linux-gnu"
+
+[profile.release]
+codegen-units = 1
+opt-level = 3
+lto = "thin"

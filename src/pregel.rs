@@ -1,10 +1,5 @@
 use crate::graph_frame::GraphFrame;
 use polars::prelude::*;
-use std::path::PathBuf;
-
-#[cfg(not(target_env = "msvc"))]
-#[global_allocator]
-static ALLOCATOR: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
 type FnBox<'a> = Box<dyn FnMut() -> Expr + 'a>;
 
@@ -286,10 +281,6 @@ pub struct Pregel<'a> {
     /// edge, the edge DataFrame will contain null values in the `dst` column. These
     /// null values need to be replaced.
     replace_nulls: Expr,
-    /// `parquet_path` is a property of the `PregelBuilder` struct that represents
-    /// the path to the Parquet file where the results of the Pregel computation
-    /// will be stored.
-    parquet_path: Option<String>,
 }
 
 /// The `PregelBuilder` struct represents a builder for configuring the Pregel
@@ -338,10 +329,6 @@ pub struct Pregel<'a> {
 /// the Pregel algorithm. As an example, when not all vertices are connected to an
 /// edge, the edge DataFrame will contain null values in the `dst` column. These
 /// null values need to be replaced.
-///
-/// * `parquet_path` is a property of the `PregelBuilder` struct that represents
-/// the path to the Parquet file where the results of the Pregel computation
-/// will be stored.
 pub struct PregelBuilder<'a> {
     /// The `graph` property is a `GraphFrame` struct that represents the
     /// graph data structure used in the Pregel algorithm. It contains information about
@@ -382,10 +369,6 @@ pub struct PregelBuilder<'a> {
     /// edge, the edge DataFrame will contain null values in the `dst` column. These
     /// null values need to be replaced.
     replace_nulls: Expr,
-    /// `parquet_path` is a property of the `PregelBuilder` struct that represents
-    /// the path to the Parquet file where the results of the Pregel computation
-    /// will be stored.
-    parquet_path: Option<String>,
 }
 
 /// This code is defining an enumeration type `MessageReceiver` in Rust with
@@ -434,7 +417,6 @@ impl<'a> PregelBuilder<'a> {
             aggregate_messages: Box::new(Default::default),
             v_prog: Box::new(Default::default),
             replace_nulls: Default::default(),
-            parquet_path: None,
         }
     }
 
@@ -639,11 +621,6 @@ impl<'a> PregelBuilder<'a> {
         self
     }
 
-    pub fn with_parquet(mut self, path: impl Into<String>) -> Self {
-        self.parquet_path = Some(path.into());
-        self
-    }
-
     /// This function sets the value of a field in a struct and returns the struct
     /// itself.
     ///
@@ -764,7 +741,6 @@ impl<'a> PregelBuilder<'a> {
             aggregate_messages: self.aggregate_messages,
             v_prog: self.v_prog,
             replace_nulls: self.replace_nulls,
-            parquet_path: self.parquet_path,
         }
     }
 }
@@ -837,12 +813,17 @@ impl<'a> Pregel<'a> {
         // We use the `lazy` method to create a lazy DataFrame. This is done to avoid the execution of
         // the DataFrame until the end of the algorithm.
         let initial_message = &self.initial_message;
-        let mut current_vertices = vertices.to_owned().select(vec![
-            all(), // we select all the columns of the graph vertices
-            initial_message
-                .to_owned()
-                .alias(self.vertex_column.as_ref()), // initial message column name is set by the user
-        ]);
+        let mut current_vertices = vertices
+            .to_owned()
+            .select(vec![
+                all(), // we select all the columns of the graph vertices
+                initial_message
+                    .to_owned()
+                    .alias(self.vertex_column.as_ref()), // initial message column name is set by the user
+            ])
+            .with_common_subplan_elimination(false)
+            .with_streaming(true)
+            .collect()?;
         // After computing the super-step 0, we start the execution of the Pregel algorithm. This
         // execution is performed until all the nodes vote to halt, or the number of iterations is
         // greater than the maximum number of iterations set by the user at the initialization of
@@ -856,7 +837,7 @@ impl<'a> Pregel<'a> {
             // column of the `edges` DataFrame and the `id` column of the `current_vertices` DataFrame.
             // The second join is performed on the `dst` column of the resulting DataFrame from the previous
             // join and the `id` column of the `current_vertices` DataFrame.
-            let current_vertices_df = &current_vertices;
+            let current_vertices_df = &current_vertices.lazy();
             let triplets_df = current_vertices_df
                 .to_owned()
                 .select([all().prefix(&format!("{}.", Column::Src.as_ref()))])
@@ -929,33 +910,21 @@ impl<'a> Pregel<'a> {
             // do so by performing an inner join between the `current_vertices` DataFrame and the
             // `vertex_columns` DataFrame. The join is performed on the `id` column of the
             // `current_vertices` DataFrame and the `id` column of the `vertex_columns` DataFrame.
-            current_vertices = vertices.to_owned().inner_join(
-                vertex_columns,
-                col(Column::Id.as_ref()),
-                col(Column::Id.as_ref()),
-            );
-
-            if self.parquet_path.is_some() {
-                current_vertices.sink_parquet(
-                    PathBuf::from(self.parquet_path.unwrap()),
-                    ParquetWriteOptions::default(),
-                )?;
-                current_vertices = LazyFrame::scan_parquet(
-                    PathBuf::from(self.parquet_path.unwrap()),
-                    ScanArgsParquet::default(),
-                )?;
-            } else {
-                current_vertices = current_vertices.with_streaming(true).collect()?.lazy();
-            }
+            current_vertices = vertices
+                .to_owned()
+                .inner_join(
+                    vertex_columns,
+                    col(Column::Id.as_ref()),
+                    col(Column::Id.as_ref()),
+                )
+                .with_common_subplan_elimination(false)
+                .with_streaming(true)
+                .collect()?;
 
             iteration += 1; // increment the counter so we now which iteration is being executed
         }
 
-        Ok(if self.parquet_path.is_some() {
-            DataFrame::empty()
-        } else {
-            current_vertices.with_streaming(true).collect()?
-        })
+        Ok(current_vertices)
     }
 }
 
@@ -1110,7 +1079,6 @@ mod tests {
                 max_exprs([col(Column::Custom("max_value").as_ref()), Column::msg(None)])
             }),
             replace_nulls: lit(0),
-            parquet_path: None,
         })
     }
 
