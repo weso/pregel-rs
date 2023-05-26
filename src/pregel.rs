@@ -904,23 +904,13 @@ impl<'a> Pregel<'a> {
             // do so by performing an inner join between the `current_vertices` DataFrame and the
             // `vertex_columns` DataFrame. The join is performed on the `id` column of the
             // `current_vertices` DataFrame and the `id` column of the `vertex_columns` DataFrame.
-            let current_vertices_lf = vertices.to_owned().inner_join(
-                vertex_columns,
-                col(Column::Id.as_ref()),
-                col(Column::Id.as_ref()),
-            );
-
-            println!(
-                "{}",
-                current_vertices_lf
-                    .clone()
-                    .with_common_subplan_elimination(false)
-                    .with_streaming(true)
-                    .describe_optimized_plan()
-                    .unwrap()
-            );
-
-            current_vertices = current_vertices_lf
+            current_vertices = vertices
+                .to_owned()
+                .inner_join(
+                    vertex_columns,
+                    col(Column::Id.as_ref()),
+                    col(Column::Id.as_ref()),
+                )
                 .with_common_subplan_elimination(false)
                 .with_streaming(true)
                 .collect()?;
