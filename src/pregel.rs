@@ -815,7 +815,7 @@ impl<'a> Pregel<'a> {
         let initial_message = &self.initial_message;
         let mut current_vertices = vertices
             .to_owned()
-            .select(vec![
+            .select([
                 all(), // we select all the columns of the graph vertices
                 initial_message
                     .to_owned()
@@ -895,14 +895,8 @@ impl<'a> Pregel<'a> {
                     col(Column::Id.as_ref()), // id column of the current_vertices DataFrame
                     Column::msg(Some(Column::Id)), // msg.id column of the message_df DataFrame
                 )
-                .with_column(
-                    // we replace the null values by 0 for the aggregation to work properly
-                    when(Column::msg(None).is_null()) // if a node has no incoming edges, the msg column is null
-                        .then(self.replace_nulls.to_owned())
-                        .otherwise(Column::msg(None))
-                        .alias(Column::Pregel.as_ref()),
-                )
-                .select(vec![
+                .with_column(Column::msg(None).fill_null(self.replace_nulls.to_owned()))
+                .select(&[
                     col(Column::Id.as_ref()),
                     v_prog().alias(self.vertex_column.as_ref()),
                 ]);
@@ -910,13 +904,23 @@ impl<'a> Pregel<'a> {
             // do so by performing an inner join between the `current_vertices` DataFrame and the
             // `vertex_columns` DataFrame. The join is performed on the `id` column of the
             // `current_vertices` DataFrame and the `id` column of the `vertex_columns` DataFrame.
-            current_vertices = vertices
-                .to_owned()
-                .inner_join(
-                    vertex_columns,
-                    col(Column::Id.as_ref()),
-                    col(Column::Id.as_ref()),
-                )
+            let current_vertices_lf = vertices.to_owned().inner_join(
+                vertex_columns,
+                col(Column::Id.as_ref()),
+                col(Column::Id.as_ref()),
+            );
+
+            println!(
+                "{}",
+                current_vertices_lf
+                    .clone()
+                    .with_common_subplan_elimination(false)
+                    .with_streaming(true)
+                    .describe_optimized_plan()
+                    .unwrap()
+            );
+
+            current_vertices = current_vertices_lf
                 .with_common_subplan_elimination(false)
                 .with_streaming(true)
                 .collect()?;
