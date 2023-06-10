@@ -1,6 +1,6 @@
 [package]
 name = "pregel-rs"
-version = "0.0.10"
+version = "0.0.11"
 authors = [ "Ángel Iglesias Préstamo <angel.iglesias.prestamo@gmail.com>" ]
 description = "A Graph library written in Rust for implementing your own algorithms in a Pregel fashion"
 documentation = "https://docs.rs/crate/pregel-rs/latest"
