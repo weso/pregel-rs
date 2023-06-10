@@ -27,8 +27,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         .with_vertex_column(Custom("rank"))
         .initial_message(lit(1.0 / num_vertices))
         .send_messages(
-            MessageReceiver::Dst,
-            Column::src(Custom("rank")) / Column::src(Custom("out_degree")),
+            MessageReceiver::Object,
+            Column::subject(Custom("rank")) / Column::subject(Custom("out_degree")),
         )
         .aggregate_messages(Column::msg(None).sum())
         .v_prog(

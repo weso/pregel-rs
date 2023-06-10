@@ -27,7 +27,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .max_iterations(4)
         .with_vertex_column(Custom("max_value"))
         .initial_message(col(Custom("value").as_ref()))
-        .send_messages(MessageReceiver::Dst, Column::src(Custom("max_value")))
+        .send_messages(MessageReceiver::Object, Column::subject(Custom("max_value")))
         .aggregate_messages(Column::msg(None).max())
         .v_prog(max_exprs([
             col(Custom("max_value").as_ref()),

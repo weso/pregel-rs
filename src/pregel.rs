@@ -4,9 +4,9 @@ use polars::prelude::*;
 type FnBox<'a> = Box<dyn FnMut() -> Expr + 'a>;
 
 /// This defines an enumeration type `ColumnIdentifier` in Rust. It  has several
-/// variants: `Id`, `Src`, `Dst`, `Edge`, `Msg`, `Pregel`, and `Custom` which
-/// takes a `String` parameter. This enum can be used to represent different
-/// types of columns in a data structure or database table for it to be used
+/// variants: `VertexId`, `Subject`, `Predicate`, `Object`, `Edge`, `Msg`, `Pregel`,
+/// and `Custom` which takes a `String` parameter. This enum can be used to represent
+/// different types of columns in a data structure or database table for it to be used
 /// in a Pregel program.
 pub enum Column {
     /// The `VertexId` variant represents the column that contains the vertex IDs.
@@ -72,17 +72,17 @@ impl Column {
     /// Arguments:
     ///
     /// * `column_name`: `column_name` is a parameter of type `ColumnIdentifier`. It is
-    /// used to identify the name of a column in a table or data source. The `src`
+    /// used to identify the name of a column in a table or data source. The `subject`
     /// function takes this parameter and returns an expression that represents the
     /// value of the column with the given name.
     ///
     /// Returns:
     ///
-    /// The function `src` returns an `Expr` which represents a reference to the source
+    /// The function `subject` returns an `Expr` which represents a reference to the source
     /// vertex ID column in a Pregel graph computation. The `Expr` is created using the
     /// `col` function and the `alias` method of the `Pregel` struct to generate the
     /// appropriate column name.
-    pub fn src(column_name: Column) -> Expr {
+    pub fn subject(column_name: Column) -> Expr {
         col(&Self::alias(&Column::Subject, column_name))
     }
 
@@ -93,16 +93,16 @@ impl Column {
     ///
     /// * `column_name`: `column_name` is a parameter of type `ColumnIdentifier` which
     /// represents the name of a column in a table. It is used as an argument to the
-    /// `dst` function to create an expression that refers to the column with the given
+    /// `object` function to create an expression that refers to the column with the given
     /// name in the context of a Pregel computation.
     ///
     /// Returns:
     ///
-    /// The function `dst` returns an expression that represents the value of the column
+    /// The function `object` returns an expression that represents the value of the column
     /// with the given `column_name` in the context of a `Pregel` graph computation. The
     /// expression is created using the `col` function and the `alias` method of the
     /// `Pregel` struct to ensure that the column name is properly qualified.
-    pub fn dst(column_name: Column) -> Expr {
+    pub fn object(column_name: Column) -> Expr {
         col(&Self::alias(&Column::Object, column_name))
     }
 
@@ -182,8 +182,8 @@ impl<'a> SendMessage<'a> {
         // it will keep only the left-hand side of the joins, thus, we need to use the `src.id` and
         // `edge.dst` columns to get the correct vertex IDs.
         let message_direction = match message_direction {
-            MessageReceiver::Src => Column::src(Column::VertexId),
-            MessageReceiver::Dst => Column::edge(Column::Object),
+            MessageReceiver::Subject => Column::subject(Column::VertexId),
+            MessageReceiver::Object => Column::edge(Column::Object),
         };
         let send_message = Box::new(send_message);
         // Now we create the `SendMessage` struct with everything set up.
@@ -375,15 +375,15 @@ pub struct PregelBuilder<'a> {
 }
 
 /// This code is defining an enumeration type `MessageReceiver` in Rust with
-/// two variants: `Src` and `Dst`. This can be used to represent the source and
+/// two variants: `Subject` and `Object`. This can be used to represent the source and
 /// destination of a message in a Pregel program.
 pub enum MessageReceiver {
-    /// The `Src` variant indicates that a message should go to the source of
+    /// The `Subject` variant indicates that a message should go to the source of
     /// an edge.
-    Src,
-    /// The `Src` variant indicates that a message should go to the destination
+    Subject,
+    /// The `Object` variant indicates that a message should go to the destination
     /// of an edge.
-    Dst,
+    Object,
 }
 
 /// The above code is implementing the `From` trait for the `Column` enum, which
@@ -393,8 +393,8 @@ pub enum MessageReceiver {
 impl From<MessageReceiver> for Column {
     fn from(message_receiver: MessageReceiver) -> Column {
         match message_receiver {
-            MessageReceiver::Src => Column::Subject,
-            MessageReceiver::Dst => Column::Object,
+            MessageReceiver::Subject => Column::Subject,
+            MessageReceiver::Object => Column::Object,
         }
     }
 }
@@ -519,8 +519,8 @@ impl<'a> PregelBuilder<'a> {
     ///         .max_iterations(4)
     ///         .with_vertex_column(Custom("aux"))
     ///         .initial_message(lit(0))
-    ///         .send_messages(MessageReceiver::Src, lit(1))
-    ///         .send_messages(MessageReceiver::Dst, lit(-1))
+    ///         .send_messages(MessageReceiver::Subject, lit(1))
+    ///         .send_messages(MessageReceiver::Object, lit(-1))
     ///         .aggregate_messages(Column::msg(None).sum())
     ///         .v_prog(Column::msg(None) + lit(1))
     ///         .build();
@@ -720,7 +720,7 @@ impl<'a> PregelBuilder<'a> {
     ///         .max_iterations(4)
     ///         .with_vertex_column(Custom("max_value"))
     ///         .initial_message(col(Custom("value").as_ref()))
-    ///         .send_messages(MessageReceiver::Dst, Column::src(Custom("max_value")))
+    ///         .send_messages(MessageReceiver::Object, Column::subject(Custom("max_value")))
     ///         .aggregate_messages(Column::msg(None).max())
     ///         .v_prog(max_exprs([col(Custom("max_value").as_ref()), Column::msg(None)]))
     ///         .build();
@@ -846,7 +846,7 @@ impl<'a> Pregel<'a> {
                 .select([all().prefix(&format!("{}.", Column::Subject.as_ref()))])
                 .inner_join(
                     edges.to_owned().select([all()]),
-                    Column::src(Column::VertexId), // src column of the current_vertices DataFrame
+                    Column::subject(Column::VertexId), // src column of the current_vertices DataFrame
                     Column::edge(Column::Subject), // src column of the edges DataFrame
                 )
                 .inner_join(
@@ -854,7 +854,7 @@ impl<'a> Pregel<'a> {
                         .to_owned()
                         .select([all().prefix(&format!("{}.", Column::Object.as_ref()))]),
                     Column::edge(Column::Object), // dst column of the resulting DataFrame
-                    Column::dst(Column::VertexId), // id column of the current_vertices DataFrame
+                    Column::object(Column::VertexId), // id column of the current_vertices DataFrame
                 );
             // We create a DataFrame that contains the messages sent by the vertices. The messages
             // are computed by performing an aggregation on the `triplets_df` DataFrame. The aggregation
@@ -973,8 +973,8 @@ mod tests {
             .initial_message(lit(1.0 / num_vertices))
             .replace_nulls(lit(0.0))
             .send_messages(
-                MessageReceiver::Dst,
-                Column::src(Column::Custom("rank")) / Column::src(Column::Custom("out_degree")),
+                MessageReceiver::Object,
+                Column::subject(Column::Custom("rank")) / Column::subject(Column::Custom("out_degree")),
             )
             .aggregate_messages(Column::msg(None).sum())
             .v_prog(
@@ -1069,8 +1069,8 @@ mod tests {
             vertex_column: Column::Custom("max_value"),
             initial_message: col(Column::Custom("value").as_ref()),
             send_messages: vec![SendMessage::new(
-                MessageReceiver::Dst,
-                Box::new(|| Column::src(Column::Custom("value"))),
+                MessageReceiver::Object,
+                Box::new(|| Column::subject(Column::Custom("value"))),
             )],
             aggregate_messages: Box::new(|| Column::msg(None).max()),
             v_prog: Box::new(|| {
@@ -1143,7 +1143,7 @@ mod tests {
             .max_iterations(4)
             .with_vertex_column(Column::Custom("aux"))
             .initial_message(lit(0)) // we pass the Undefined state to all vertices
-            .send_messages(MessageReceiver::Src, lit(0))
+            .send_messages(MessageReceiver::Subject, lit(0))
             .aggregate_messages(lit(0))
             .v_prog(lit(0))
             .build()
@@ -1162,8 +1162,8 @@ mod tests {
             .max_iterations(4)
             .with_vertex_column(Column::Custom("aux"))
             .initial_message(lit(0))
-            .send_messages(MessageReceiver::Src, lit(1))
-            .send_messages(MessageReceiver::Dst, lit(-1))
+            .send_messages(MessageReceiver::Subject, lit(1))
+            .send_messages(MessageReceiver::Object, lit(-1))
             .aggregate_messages(Column::msg(None).sum())
             .v_prog(Column::msg(None) + lit(1))
             .build()
