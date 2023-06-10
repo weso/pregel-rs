@@ -9,12 +9,14 @@ type FnBox<'a> = Box<dyn FnMut() -> Expr + 'a>;
 /// types of columns in a data structure or database table for it to be used
 /// in a Pregel program.
 pub enum Column {
-    /// The `Id` variant represents the column that contains the vertex IDs.
-    Id,
-    /// The `Src` variant represents the column that contains the source vertex IDs.
-    Src,
-    /// The `Dst` variant represents the column that contains the destination vertex IDs.
-    Dst,
+    /// The `VertexId` variant represents the column that contains the vertex IDs.
+    VertexId,
+    /// The `Subject` variant represents the column that contains the source vertex IDs.
+    Subject,
+    /// The `Predicate` variant represents the column that contains the IDs of the predicates.
+    Predicate,
+    /// The `Object` variant represents the column that contains the destination vertex IDs.
+    Object,
     /// The `Edge` variant represents the column that contains the edge IDs.
     Edge,
     /// The `Msg` variant represents the column that contains the messages sent to a vertex.
@@ -36,10 +38,10 @@ pub enum Column {
 ///
 /// ```rust
 /// use polars::prelude::*;
-/// use pregel_rs::pregel::Column::{Custom, Id};
+/// use pregel_rs::pregel::Column::{Custom, VertexId};
 ///
 /// let vertices = df![
-///     Id.as_ref() => [0, 1, 2, 3],
+///     VertexId.as_ref() => [0, 1, 2, 3],
 ///     Custom("value").as_ref() => [3, 6, 2, 1],
 /// ];
 ///
@@ -47,9 +49,10 @@ pub enum Column {
 impl AsRef<str> for Column {
     fn as_ref(&self) -> &str {
         match self {
-            Column::Id => "id",
-            Column::Src => "src",
-            Column::Dst => "dst",
+            Column::VertexId => "vertex_id",
+            Column::Subject => "subject",
+            Column::Predicate => "predicate",
+            Column::Object => "object",
             Column::Edge => "edge",
             Column::Msg => "msg",
             Column::Pregel => "_pregel_msg_",
@@ -80,7 +83,7 @@ impl Column {
     /// `col` function and the `alias` method of the `Pregel` struct to generate the
     /// appropriate column name.
     pub fn src(column_name: Column) -> Expr {
-        col(&Self::alias(&Column::Src, column_name))
+        col(&Self::alias(&Column::Subject, column_name))
     }
 
     /// This function returns an expression for a column identifier representing
@@ -100,7 +103,7 @@ impl Column {
     /// expression is created using the `col` function and the `alias` method of the
     /// `Pregel` struct to ensure that the column name is properly qualified.
     pub fn dst(column_name: Column) -> Expr {
-        col(&Self::alias(&Column::Dst, column_name))
+        col(&Self::alias(&Column::Object, column_name))
     }
 
     /// This function returns an expression for a column name in a graph edge table.
@@ -179,8 +182,8 @@ impl<'a> SendMessage<'a> {
         // it will keep only the left-hand side of the joins, thus, we need to use the `src.id` and
         // `edge.dst` columns to get the correct vertex IDs.
         let message_direction = match message_direction {
-            MessageReceiver::Src => Column::src(Column::Id),
-            MessageReceiver::Dst => Column::edge(Column::Dst),
+            MessageReceiver::Src => Column::src(Column::VertexId),
+            MessageReceiver::Dst => Column::edge(Column::Object),
         };
         let send_message = Box::new(send_message);
         // Now we create the `SendMessage` struct with everything set up.
@@ -390,8 +393,8 @@ pub enum MessageReceiver {
 impl From<MessageReceiver> for Column {
     fn from(message_receiver: MessageReceiver) -> Column {
         match message_receiver {
-            MessageReceiver::Src => Column::Src,
-            MessageReceiver::Dst => Column::Dst,
+            MessageReceiver::Src => Column::Subject,
+            MessageReceiver::Dst => Column::Object,
         }
     }
 }
@@ -493,7 +496,7 @@ impl<'a> PregelBuilder<'a> {
     /// use polars::prelude::*;
     /// use pregel_rs::graph_frame::GraphFrame;
     /// use pregel_rs::pregel::Column;
-    /// use pregel_rs::pregel::Column::{Custom, Dst, Id, Src};
+    /// use pregel_rs::pregel::Column::{Custom, Object, VertexId, Subject};
     /// use pregel_rs::pregel::{MessageReceiver, Pregel, PregelBuilder};
     /// use std::error::Error;
     ///
@@ -503,12 +506,12 @@ impl<'a> PregelBuilder<'a> {
     /// fn main() -> Result<(), Box<dyn Error>> {
     ///
     ///     let edges = df![
-    ///         Src.as_ref() => [0, 1, 1, 2, 2, 3],
-    ///         Dst.as_ref() => [1, 0, 3, 1, 3, 2],
+    ///         Subject.as_ref() => [0, 1, 1, 2, 2, 3],
+    ///         Object.as_ref() => [1, 0, 3, 1, 3, 2],
     ///     ]?;
     ///
     ///     let vertices = df![
-    ///         Id.as_ref() => [0, 1, 2, 3],
+    ///         VertexId.as_ref() => [0, 1, 2, 3],
     ///         Custom("value").as_ref() => [3, 6, 2, 1],
     ///     ]?;
     ///
@@ -697,19 +700,19 @@ impl<'a> PregelBuilder<'a> {
     /// use polars::prelude::*;
     /// use pregel_rs::graph_frame::GraphFrame;
     /// use pregel_rs::pregel::Column;
-    /// use pregel_rs::pregel::Column::{Custom, Dst, Id, Src};
+    /// use pregel_rs::pregel::Column::{Custom, Object, VertexId, Subject};
     /// use pregel_rs::pregel::{MessageReceiver, Pregel, PregelBuilder};
     /// use std::error::Error;
     ///
     /// // Simple example of a Pregel algorithm that finds the maximum value in a graph.
     /// fn main() -> Result<(), Box<dyn Error>> {
     /// let edges = df![
-    ///         Src.as_ref() => [0, 1, 1, 2, 2, 3],
-    ///         Dst.as_ref() => [1, 0, 3, 1, 3, 2],
+    ///         Subject.as_ref() => [0, 1, 1, 2, 2, 3],
+    ///         Object.as_ref() => [1, 0, 3, 1, 3, 2],
     ///     ]?;
     ///
     ///     let vertices = df![
-    ///         Id.as_ref() => [0, 1, 2, 3],
+    ///         VertexId.as_ref() => [0, 1, 2, 3],
     ///         Custom("value").as_ref() => [3, 6, 2, 1],
     ///     ]?;
     ///
@@ -840,18 +843,18 @@ impl<'a> Pregel<'a> {
             let current_vertices_df = &current_vertices.lazy();
             let triplets_df = current_vertices_df
                 .to_owned()
-                .select([all().prefix(&format!("{}.", Column::Src.as_ref()))])
+                .select([all().prefix(&format!("{}.", Column::Subject.as_ref()))])
                 .inner_join(
                     edges.to_owned().select([all()]),
-                    Column::src(Column::Id), // src column of the current_vertices DataFrame
-                    Column::edge(Column::Src), // src column of the edges DataFrame
+                    Column::src(Column::VertexId), // src column of the current_vertices DataFrame
+                    Column::edge(Column::Subject), // src column of the edges DataFrame
                 )
                 .inner_join(
                     current_vertices_df
                         .to_owned()
-                        .select([all().prefix(&format!("{}.", Column::Dst.as_ref()))]),
-                    Column::edge(Column::Dst), // dst column of the resulting DataFrame
-                    Column::dst(Column::Id),   // id column of the current_vertices DataFrame
+                        .select([all().prefix(&format!("{}.", Column::Object.as_ref()))]),
+                    Column::edge(Column::Object), // dst column of the resulting DataFrame
+                    Column::dst(Column::VertexId), // id column of the current_vertices DataFrame
                 );
             // We create a DataFrame that contains the messages sent by the vertices. The messages
             // are computed by performing an aggregation on the `triplets_df` DataFrame. The aggregation
@@ -869,7 +872,7 @@ impl<'a> Pregel<'a> {
                     (
                         message_direction
                             .to_owned()
-                            .alias(&Column::alias(&Column::Msg, Column::Id)),
+                            .alias(&Column::alias(&Column::Msg, Column::VertexId)),
                         send_message_expr().alias(Column::Pregel.as_ref()),
                     )
                 })
@@ -880,7 +883,7 @@ impl<'a> Pregel<'a> {
             let aggregate_messages = &mut self.aggregate_messages;
             let message_df = triplets_df
                 .select(send_messages)
-                .groupby([Column::msg(Some(Column::Id))])
+                .groupby([Column::msg(Some(Column::VertexId))])
                 .agg([aggregate_messages().alias(Column::Pregel.as_ref())]);
             // We Compute the new values for the vertices. Note that we have to check for possibly
             // null values after performing the outer join. This is, columns where the join key does
@@ -892,12 +895,12 @@ impl<'a> Pregel<'a> {
                 .to_owned()
                 .outer_join(
                     message_df,
-                    col(Column::Id.as_ref()), // id column of the current_vertices DataFrame
-                    Column::msg(Some(Column::Id)), // msg.id column of the message_df DataFrame
+                    col(Column::VertexId.as_ref()), // id column of the current_vertices DataFrame
+                    Column::msg(Some(Column::VertexId)), // msg.id column of the message_df DataFrame
                 )
                 .with_column(Column::msg(None).fill_null(self.replace_nulls.to_owned()))
                 .select(&[
-                    col(Column::Id.as_ref()),
+                    col(Column::VertexId.as_ref()),
                     v_prog().alias(self.vertex_column.as_ref()),
                 ]);
             // We update the `current_vertices` DataFrame with the new values for the vertices. We
@@ -908,8 +911,8 @@ impl<'a> Pregel<'a> {
                 .to_owned()
                 .inner_join(
                     vertex_columns,
-                    col(Column::Id.as_ref()),
-                    col(Column::Id.as_ref()),
+                    col(Column::VertexId.as_ref()),
+                    col(Column::VertexId.as_ref()),
                 )
                 .with_common_subplan_elimination(false)
                 .with_streaming(true)
@@ -925,14 +928,15 @@ impl<'a> Pregel<'a> {
 #[cfg(test)]
 mod tests {
     use crate::graph_frame::GraphFrame;
+    use crate::pregel::Column::VertexId;
     use crate::pregel::{Column, MessageReceiver, Pregel, PregelBuilder, SendMessage};
     use polars::prelude::*;
     use std::error::Error;
 
     fn pagerank_graph() -> Result<GraphFrame, String> {
         let edges = match df![
-            Column::Src.as_ref() => [0, 0, 1, 2, 3, 4, 4, 4],
-            Column::Dst.as_ref() => [1, 2, 2, 3, 3, 1, 2, 3],
+            Column::Subject.as_ref() => [0, 0, 1, 2, 3, 4, 4, 4],
+            Column::Object.as_ref() => [1, 2, 2, 3, 3, 1, 2, 3],
         ] {
             Ok(edges) => edges,
             Err(_) => return Err(String::from("Error creating the edges DataFrame")),
@@ -961,7 +965,7 @@ mod tests {
     fn pagerank_builder<'a>(iterations: u8) -> Result<Pregel<'a>, Box<dyn Error>> {
         let graph = pagerank_graph()?;
         let damping_factor = 0.85;
-        let num_vertices: f64 = graph.vertices.column(Column::Id.as_ref())?.len() as f64;
+        let num_vertices: f64 = graph.vertices.column(Column::VertexId.as_ref())?.len() as f64;
 
         Ok(PregelBuilder::new(graph)
             .max_iterations(iterations)
@@ -1037,15 +1041,15 @@ mod tests {
 
     fn max_value_graph() -> Result<GraphFrame, String> {
         let edges = match df![
-            Column::Src.as_ref() => [0, 1, 1, 2, 2, 3],
-            Column::Dst.as_ref() => [1, 0, 3, 1, 3, 2],
+            Column::Subject.as_ref() => [0, 1, 1, 2, 2, 3],
+            Column::Object.as_ref() => [1, 0, 3, 1, 3, 2],
         ] {
             Ok(edges) => edges,
             Err(_) => return Err(String::from("Error creating the edges DataFrame")),
         };
 
         let vertices = match df![
-            Column::Id.as_ref() => [0, 1, 2, 3],
+            Column::VertexId.as_ref() => [0, 1, 2, 3],
             Column::Custom("value").as_ref() => [3, 6, 2, 1],
         ] {
             Ok(vertices) => vertices,
@@ -1169,7 +1173,7 @@ mod tests {
             Err(_) => return Err(String::from("Error running pregel")),
         };
 
-        let sorted_pregel = match pregel.sort(&["id"], false) {
+        let sorted_pregel = match pregel.sort(&[VertexId.as_ref()], false) {
             Ok(sorted_pregel) => sorted_pregel,
             Err(_) => return Err(String::from("Error sorting the DataFrame")),
         };

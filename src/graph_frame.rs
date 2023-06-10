@@ -1,4 +1,4 @@
-use crate::pregel::Column::{Custom, Dst, Id, Src};
+use crate::pregel::Column::{Custom, Object, Subject, VertexId};
 use polars::prelude::*;
 use std::fmt::{Debug, Display, Formatter};
 use std::{error, fmt};
@@ -76,14 +76,14 @@ impl error::Error for GraphFrameError {
 #[derive(Debug)]
 pub enum MissingColumnError {
     /// `Id` is a variant of `MissingColumnError` that represents the error that
-    /// occurs when the `Id` column is missing from a DataFrame.
-    Id,
+    /// occurs when the `VertexId` column is missing from a DataFrame.
+    VertexId,
     /// `Src` is a variant of `MissingColumnError` that represents the error that
-    /// occurs when the `Src` column is missing from a DataFrame.
-    Src,
+    /// occurs when the `Subject` column is missing from a DataFrame.
+    Subject,
     /// `Dst` is a variant of `MissingColumnError` that represents the error that
-    /// occurs when the `Dst` column is missing from a DataFrame.
-    Dst,
+    /// occurs when the `Object` column is missing from a DataFrame.
+    Object,
 }
 
 impl Display for MissingColumnError {
@@ -91,9 +91,9 @@ impl Display for MissingColumnError {
         let message = |df, column: &str| format!("Missing column {} in {}", column, df);
 
         match self {
-            MissingColumnError::Id => write!(f, "{}", message("vertices", Id.as_ref())),
-            MissingColumnError::Src => write!(f, "{}", message("edges", Src.as_ref())),
-            MissingColumnError::Dst => write!(f, "{}", message("edges", Dst.as_ref())),
+            MissingColumnError::VertexId => write!(f, "{}", message("vertices", VertexId.as_ref())),
+            MissingColumnError::Subject => write!(f, "{}", message("edges", Subject.as_ref())),
+            MissingColumnError::Object => write!(f, "{}", message("edges", Object.as_ref())),
         }
     }
 }
@@ -124,14 +124,14 @@ impl GraphFrame {
     /// `vertices` and `edges` DataFrames. If any of the required columns (`Id`, `Src`,
     /// `Dst`) are missing in the DataFrames, the function returns an `Error`.
     pub fn new(vertices: DataFrame, edges: DataFrame) -> Result<Self> {
-        if !vertices.get_column_names().contains(&Id.as_ref()) {
-            return Err(GraphFrameError::MissingColumn(MissingColumnError::Id));
+        if !vertices.get_column_names().contains(&VertexId.as_ref()) {
+            return Err(GraphFrameError::MissingColumn(MissingColumnError::VertexId));
         }
-        if !edges.get_column_names().contains(&Src.as_ref()) {
-            return Err(GraphFrameError::MissingColumn(MissingColumnError::Src));
+        if !edges.get_column_names().contains(&Subject.as_ref()) {
+            return Err(GraphFrameError::MissingColumn(MissingColumnError::Subject));
         }
-        if !edges.get_column_names().contains(&Dst.as_ref()) {
-            return Err(GraphFrameError::MissingColumn(MissingColumnError::Dst));
+        if !edges.get_column_names().contains(&Object.as_ref()) {
+            return Err(GraphFrameError::MissingColumn(MissingColumnError::Object));
         }
 
         Ok(GraphFrame { vertices, edges })
@@ -152,17 +152,17 @@ impl GraphFrame {
     /// The `from_edges` function returns a `Result<Self>` where `Self` is the
     /// `GraphFrame` struct.
     pub fn from_edges(edges: DataFrame) -> Result<Self> {
-        let srcs = edges
+        let subjects = edges
             .clone() // this is because cloning a DataFrame is cheap
             .lazy()
-            .select([col(Src.as_ref()).alias(Id.as_ref())]);
-        let dsts = edges
+            .select([col(Subject.as_ref()).alias(VertexId.as_ref())]);
+        let objects = edges
             .clone() // this is because cloning a DataFrame is cheap
             .lazy()
-            .select([col(Dst.as_ref()).alias(Id.as_ref())]);
-        let vertices = concat([srcs, dsts], true, true)?
+            .select([col(Object.as_ref()).alias(VertexId.as_ref())]);
+        let vertices = concat([subjects, objects], true, true)?
             .unique(
-                Some(vec![Id.as_ref().to_string()]),
+                Some(vec![VertexId.as_ref().to_string()]),
                 UniqueKeepStrategy::First,
             )
             .collect()?;
@@ -184,7 +184,7 @@ impl GraphFrame {
     pub fn out_degrees(self) -> PolarsResult<DataFrame> {
         self.edges
             .lazy()
-            .groupby([col(Src.as_ref()).alias(Id.as_ref())])
+            .groupby([col(Subject.as_ref()).alias(VertexId.as_ref())])
             .agg([count().alias(Custom("out_degree").as_ref())])
             .collect()
     }
@@ -203,7 +203,7 @@ impl GraphFrame {
     pub fn in_degrees(self) -> PolarsResult<DataFrame> {
         self.edges
             .lazy()
-            .groupby([col(Dst.as_ref())])
+            .groupby([col(Object.as_ref())])
             .agg([count().alias(Custom("in_degree").as_ref())])
             .collect()
     }
@@ -226,26 +226,26 @@ impl Display for GraphFrame {
 
 #[cfg(test)]
 mod tests {
-    use crate::graph_frame::GraphFrame;
+    use crate::graph_frame::{GraphFrame, GraphFrameError};
+    use crate::pregel::Column;
     use polars::prelude::*;
+
+    fn graph() -> Result<GraphFrame, GraphFrameError> {
+        let subjects = Series::new(Column::Subject.as_ref(), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+        let objects = Series::new(Column::Object.as_ref(), [2, 3, 4, 5, 6, 7, 8, 9, 10, 1]);
+        GraphFrame::from_edges(DataFrame::new(vec![subjects, objects]).unwrap())
+    }
 
     #[test]
     fn test_from_edges() {
-        let srcs = Series::new("src", [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
-        let dsts = Series::new("dst", [2, 3, 4, 5, 6, 7, 8, 9, 10, 1]);
-        let edges = DataFrame::new(vec![srcs, dsts]).unwrap();
-        let graphframe = GraphFrame::from_edges(edges).unwrap();
-        assert_eq!(graphframe.vertices.height(), 10);
-        assert_eq!(graphframe.edges.height(), 10);
+        let graph = graph().unwrap();
+        assert_eq!(graph.vertices.height(), 10);
+        assert_eq!(graph.edges.height(), 10);
     }
 
     #[test]
     fn test_in_degree() {
-        let srcs = Series::new("src", [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
-        let dsts = Series::new("dst", [2, 3, 4, 5, 6, 7, 8, 9, 10, 1]);
-        let edges = DataFrame::new(vec![srcs, dsts]).unwrap();
-        let graphframe = GraphFrame::from_edges(edges).unwrap();
-        let in_degree = graphframe.in_degrees().unwrap();
+        let in_degree = graph().unwrap().in_degrees().unwrap();
         assert_eq!(in_degree.height(), 10);
         assert_eq!(
             in_degree
@@ -261,11 +261,7 @@ mod tests {
 
     #[test]
     fn test_out_degree() {
-        let srcs = Series::new("src", [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
-        let dsts = Series::new("dst", [2, 3, 4, 5, 6, 7, 8, 9, 10, 1]);
-        let edges = DataFrame::new(vec![srcs, dsts]).unwrap();
-        let graphframe = GraphFrame::from_edges(edges).unwrap();
-        let out_degree = graphframe.out_degrees().unwrap();
+        let out_degree = graph().unwrap().out_degrees().unwrap();
         assert_eq!(out_degree.height(), 10);
         assert_eq!(
             out_degree
@@ -280,38 +276,40 @@ mod tests {
     }
 
     #[test]
-    fn test_new_missing_id_column() {
-        let vertices = DataFrame::new(vec![Series::new("its_not_id", [1, 2, 3])]).unwrap();
-        let srcs = Series::new("src", [1, 2, 3]);
-        let dsts = Series::new("dst", [2, 3, 4]);
-        let edges = DataFrame::new(vec![srcs, dsts]).unwrap();
+    fn test_new_missing_vertex_id_column() {
+        let vertices = DataFrame::new(vec![Series::new("not_vertex_id", [1, 2, 3])]).unwrap();
+        let subjects = Series::new(Column::Subject.as_ref(), [1, 2, 3]);
+        let objects = Series::new(Column::Object.as_ref(), [2, 3, 4]);
+        let edges = DataFrame::new(vec![subjects, objects]).unwrap();
         match GraphFrame::new(vertices, edges) {
             Ok(_) => panic!("Should have failed"),
-            Err(e) => assert_eq!(e.to_string(), "Missing column id in vertices"),
+            Err(e) => assert_eq!(e.to_string(), "Missing column vertex_id in vertices"),
         }
     }
 
     #[test]
-    fn test_new_missing_src_column() {
-        let vertices = DataFrame::new(vec![Series::new("id", [1, 2, 3])]).unwrap();
-        let srcs = Series::new("its_not_src", [1, 2, 3]);
-        let dsts = Series::new("dst", [2, 3, 4]);
-        let edges = DataFrame::new(vec![srcs, dsts]).unwrap();
+    fn test_new_missing_subject_column() {
+        let vertices =
+            DataFrame::new(vec![Series::new(Column::VertexId.as_ref(), [1, 2, 3])]).unwrap();
+        let subjects = Series::new("not_src", [1, 2, 3]);
+        let objects = Series::new(Column::Object.as_ref(), [2, 3, 4]);
+        let edges = DataFrame::new(vec![subjects, objects]).unwrap();
         match GraphFrame::new(vertices, edges) {
             Ok(_) => panic!("Should have failed"),
-            Err(e) => assert_eq!(e.to_string(), "Missing column src in edges"),
+            Err(e) => assert_eq!(e.to_string(), "Missing column subject in edges"),
         }
     }
 
     #[test]
-    fn test_new_missing_dst_column() {
-        let vertices = DataFrame::new(vec![Series::new("id", [1, 2, 3])]).unwrap();
-        let srcs = Series::new("src", [1, 2, 3]);
-        let dsts = Series::new("its_not_dst", [2, 3, 4]);
-        let edges = DataFrame::new(vec![srcs, dsts]).unwrap();
+    fn test_new_missing_object_column() {
+        let vertices =
+            DataFrame::new(vec![Series::new(Column::VertexId.as_ref(), [1, 2, 3])]).unwrap();
+        let subjects = Series::new(Column::Subject.as_ref(), [1, 2, 3]);
+        let objects = Series::new("not_dst", [2, 3, 4]);
+        let edges = DataFrame::new(vec![subjects, objects]).unwrap();
         match GraphFrame::new(vertices, edges) {
             Ok(_) => panic!("Should have failed"),
-            Err(e) => assert_eq!(e.to_string(), "Missing column dst in edges"),
+            Err(e) => assert_eq!(e.to_string(), "Missing column object in edges"),
         }
     }
 }

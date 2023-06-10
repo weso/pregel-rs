@@ -1,6 +1,6 @@
 use polars::prelude::*;
 use pregel_rs::graph_frame::GraphFrame;
-use pregel_rs::pregel::Column::{Custom, Dst, Id, Src};
+use pregel_rs::pregel::Column::{Custom, Object, Subject, VertexId};
 use pregel_rs::pregel::{Column, MessageReceiver, PregelBuilder};
 use std::error::Error;
 
@@ -13,14 +13,14 @@ use std::error::Error;
 /// result of the `pregel.run()` method call to the console.
 fn main() -> Result<(), Box<dyn Error>> {
     let edges = df![
-        Src.as_ref() => [0, 0, 1, 2, 3, 4, 4, 4],
-        Dst.as_ref() => [1, 2, 2, 3, 3, 1, 2, 3],
+        Subject.as_ref() => [0, 0, 1, 2, 3, 4, 4, 4],
+        Object.as_ref() => [1, 2, 2, 3, 3, 1, 2, 3],
     ]?;
 
     let vertices = GraphFrame::from_edges(edges.clone())?.out_degrees()?;
 
     let damping_factor = 0.85;
-    let num_vertices: f64 = vertices.column(Id.as_ref())?.len() as f64;
+    let num_vertices: f64 = vertices.column(VertexId.as_ref())?.len() as f64;
 
     let pregel = PregelBuilder::new(GraphFrame::new(vertices, edges)?)
         .max_iterations(4)

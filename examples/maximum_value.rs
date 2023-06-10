@@ -1,6 +1,6 @@
 use polars::prelude::*;
 use pregel_rs::graph_frame::GraphFrame;
-use pregel_rs::pregel::Column::{Custom, Dst, Id, Src};
+use pregel_rs::pregel::Column::{Custom, Object, Subject, VertexId};
 use pregel_rs::pregel::{Column, MessageReceiver, PregelBuilder};
 use std::error::Error;
 
@@ -14,12 +14,12 @@ use std::error::Error;
 /// print the result of the `pregel.run()` method call to the console.
 fn main() -> Result<(), Box<dyn Error>> {
     let edges = df![
-        Src.as_ref() => [0, 1, 1, 2, 2, 3],
-        Dst.as_ref() => [1, 0, 3, 1, 3, 2],
+        Subject.as_ref() => [0, 1, 1, 2, 2, 3],
+        Object.as_ref() => [1, 0, 3, 1, 3, 2],
     ]?;
 
     let vertices = df![
-        Id.as_ref() => [0, 1, 2, 3],
+        VertexId.as_ref() => [0, 1, 2, 3],
         Custom("value").as_ref() => [3, 6, 2, 1],
     ]?;
 
