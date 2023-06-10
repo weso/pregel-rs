@@ -847,7 +847,7 @@ impl<'a> Pregel<'a> {
                 .inner_join(
                     edges.to_owned().select([all()]),
                     Column::subject(Column::VertexId), // src column of the current_vertices DataFrame
-                    Column::edge(Column::Subject), // src column of the edges DataFrame
+                    Column::edge(Column::Subject),     // src column of the edges DataFrame
                 )
                 .inner_join(
                     current_vertices_df
@@ -974,7 +974,8 @@ mod tests {
             .replace_nulls(lit(0.0))
             .send_messages(
                 MessageReceiver::Object,
-                Column::subject(Column::Custom("rank")) / Column::subject(Column::Custom("out_degree")),
+                Column::subject(Column::Custom("rank"))
+                    / Column::subject(Column::Custom("out_degree")),
             )
             .aggregate_messages(Column::msg(None).sum())
             .v_prog(
