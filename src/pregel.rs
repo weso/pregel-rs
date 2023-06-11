@@ -233,17 +233,6 @@ impl<'a> SendMessage<'a> {
 /// each iteration of the algorithm. The vertex program can take as input the current
 /// state of the vertex, the messages received from its neighbors or and any other
 /// relevant information.
-///
-/// * `replace_nulls`: `replace_nulls` is an expression that defines how null values
-/// in the vertex DataFrame should be replaced. This is useful when the vertex
-/// DataFrame contains null values that need to be replaced during the execution of
-/// the Pregel algorithm. As an example, when not all vertices are connected to an
-/// edge, the edge DataFrame will contain null values in the `dst` column. These
-/// null values need to be replaced.
-///
-/// * `parquet_path` is a property of the `PregelBuilder` struct that represents
-/// the path to the Parquet file where the results of the Pregel computation
-/// will be stored.
 pub struct Pregel<'a> {
     /// The `graph` property is a `GraphFrame` struct that represents the
     /// graph data structure used in the Pregel algorithm. It contains information about
@@ -277,13 +266,6 @@ pub struct Pregel<'a> {
     /// current state of the vertex, the messages received from its neighbors or
     /// and any other relevant information.
     v_prog: FnBox<'a>,
-    /// `replace_nulls` is an expression that defines how null values in the vertex
-    /// DataFrame should be replaced. This is useful when the vertex DataFrame
-    /// contains null values that need to be replaced during the execution of the
-    /// Pregel algorithm. As an example, when not all vertices are connected to an
-    /// edge, the edge DataFrame will contain null values in the `dst` column. These
-    /// null values need to be replaced.
-    replace_nulls: Expr,
 }
 
 /// The `PregelBuilder` struct represents a builder for configuring the Pregel
@@ -325,13 +307,6 @@ pub struct Pregel<'a> {
 /// each iteration of the algorithm. The vertex program can take as input the current
 /// state of the vertex, the messages received from its neighbors or and any other
 /// relevant information.
-///
-/// /// * `replace_nulls`: `replace_nulls` is an expression that defines how null values
-/// in the vertex DataFrame should be replaced. This is useful when the vertex
-/// DataFrame contains null values that need to be replaced during the execution of
-/// the Pregel algorithm. As an example, when not all vertices are connected to an
-/// edge, the edge DataFrame will contain null values in the `dst` column. These
-/// null values need to be replaced.
 pub struct PregelBuilder<'a> {
     /// The `graph` property is a `GraphFrame` struct that represents the
     /// graph data structure used in the Pregel algorithm. It contains information about
@@ -365,13 +340,6 @@ pub struct PregelBuilder<'a> {
     /// current state of the vertex, the messages received from its neighbors or
     /// and any other relevant information.
     v_prog: FnBox<'a>,
-    /// `replace_nulls` is an expression that defines how null values in the vertex
-    /// DataFrame should be replaced. This is useful when the vertex DataFrame
-    /// contains null values that need to be replaced during the execution of the
-    /// Pregel algorithm. As an example, when not all vertices are connected to an
-    /// edge, the edge DataFrame will contain null values in the `dst` column. These
-    /// null values need to be replaced.
-    replace_nulls: Expr,
 }
 
 /// This code is defining an enumeration type `MessageReceiver` in Rust with
@@ -419,7 +387,6 @@ impl<'a> PregelBuilder<'a> {
             send_messages: Default::default(),
             aggregate_messages: Box::new(Default::default),
             v_prog: Box::new(Default::default),
-            replace_nulls: Default::default(),
         }
     }
 
@@ -665,27 +632,6 @@ impl<'a> PregelBuilder<'a> {
         self
     }
 
-    /// This function sets the value of a field called "replace_nulls" in a struct to a
-    /// given expression and returns the modified struct.
-    ///
-    /// Arguments:
-    ///
-    /// * `replace_nulls`: `replace_nulls` is a parameter of type `Expr` that is used in
-    /// a method of a struct. The method takes ownership of the struct (`self`) and the
-    /// `replace_nulls` parameter, and sets the `replace_nulls` field of the struct to the
-    /// value of the `replace_nulls` parameter.
-    ///
-    /// Returns:
-    ///
-    /// The `replace_nulls` method returns `Self`, which refers to the same struct
-    /// instance that the method was called on. This allows for method chaining, where
-    /// multiple methods can be called on the same struct instance in a single
-    /// expression.
-    pub fn replace_nulls(mut self, replace_nulls: Expr) -> Self {
-        self.replace_nulls = replace_nulls;
-        self
-    }
-
     /// The function returns a Pregel struct with the specified properties. This is,
     /// Pregel structs are to be created using the `Builder Pattern`, a creational
     /// design pattern that provides a way to construct complex structs in a
@@ -743,7 +689,6 @@ impl<'a> PregelBuilder<'a> {
             send_messages: self.send_messages,
             aggregate_messages: self.aggregate_messages,
             v_prog: self.v_prog,
-            replace_nulls: self.replace_nulls,
         }
     }
 }
@@ -898,7 +843,6 @@ impl<'a> Pregel<'a> {
                     col(Column::VertexId.as_ref()), // id column of the current_vertices DataFrame
                     Column::msg(Some(Column::VertexId)), // msg.id column of the message_df DataFrame
                 )
-                .with_column(Column::msg(None).fill_null(self.replace_nulls.to_owned()))
                 .select(&[
                     col(Column::VertexId.as_ref()),
                     v_prog().alias(self.vertex_column.as_ref()),
@@ -971,7 +915,11 @@ mod tests {
             .max_iterations(iterations)
             .with_vertex_column(Column::Custom("rank"))
             .initial_message(lit(1.0 / num_vertices))
-            .replace_nulls(lit(0.0))
+            .send_messages(
+                MessageReceiver::Subject,
+                Column::subject(Column::Custom("rank"))
+                    / Column::subject(Column::Custom("out_degree")),
+            )
             .send_messages(
                 MessageReceiver::Object,
                 Column::subject(Column::Custom("rank"))
@@ -1077,7 +1025,6 @@ mod tests {
             v_prog: Box::new(|| {
                 max_exprs([col(Column::Custom("max_value").as_ref()), Column::msg(None)])
             }),
-            replace_nulls: lit(0),
         })
     }
 
