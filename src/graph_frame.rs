@@ -13,6 +13,7 @@ use std::{error, fmt};
 ///
 /// * `edges`: The `edges` property is a `DataFrame` that represents the edges of a
 /// graph. It must contain -- at least -- two columns: Src and Dst.
+#[derive(Clone)]
 pub struct GraphFrame {
     /// The `vertices` property is a `DataFrame` that represents the nodes in a graph.
     pub vertices: DataFrame,

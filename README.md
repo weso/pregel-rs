@@ -63,7 +63,7 @@ cargo new my_pregel_project
 
 ```toml
 [dependencies]
-pregel-rs = "0.0.12"
+pregel-rs = "0.0.13"
 ```
 
 4. _Implement your graph algorithm_: Now you can start implementing your graph
