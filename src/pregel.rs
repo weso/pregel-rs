@@ -769,8 +769,6 @@ impl<'a> Pregel<'a> {
                     .to_owned()
                     .alias(self.vertex_column.as_ref()), // initial message column name is set by the user
             ])
-            .with_common_subplan_elimination(false)
-            .with_streaming(true)
             .collect()?;
         // After computing the super-step 0, we start the execution of the Pregel algorithm. This
         // execution is performed until all the nodes vote to halt, or the number of iterations is
@@ -826,8 +824,8 @@ impl<'a> Pregel<'a> {
             let send_messages_msg_df = &mut send_messages_msg; // we create a mutable reference to the `send_messages_msg` Vector
             send_messages.append(send_messages_msg_df); // we append the `send_messages_msg` Vector to the `send_messages` Vector
             let aggregate_messages = &mut self.aggregate_messages;
-            let message_df = triplets_df
-                .select(send_messages)
+            let message_df = triplets_df.select(send_messages);
+            let aggregate_df = message_df
                 .groupby([Column::msg(Some(Column::VertexId))])
                 .agg([aggregate_messages().alias(Column::Pregel.as_ref())]);
             // We Compute the new values for the vertices. Note that we have to check for possibly
@@ -839,7 +837,7 @@ impl<'a> Pregel<'a> {
             let vertex_columns = current_vertices_df
                 .to_owned()
                 .outer_join(
-                    message_df,
+                    aggregate_df,
                     col(Column::VertexId.as_ref()), // id column of the current_vertices DataFrame
                     Column::msg(Some(Column::VertexId)), // msg.id column of the message_df DataFrame
                 )
@@ -859,7 +857,6 @@ impl<'a> Pregel<'a> {
                     col(Column::VertexId.as_ref()),
                 )
                 .with_common_subplan_elimination(false)
-                .with_streaming(true)
                 .collect()?;
 
             iteration += 1; // increment the counter so we now which iteration is being executed
