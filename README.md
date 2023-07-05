@@ -77,6 +77,7 @@ pregel-rs = "0.0.13"
 You could also run one of the examples to check how this library works:
 
 ```sh
+cargo build
 cargo run --example pagerank
 ```
 
