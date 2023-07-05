@@ -74,14 +74,10 @@ pregel-rs = "0.0.13"
    can build and run your project using the Cargo package manager. You can build your
    project by running the following command in your terminal:
 
-```sh
-cargo build
-```
-
-And you can run your project by running the following command:
+You could also run one of the examples to check how this library works:
 
 ```sh
-cargo run
+cargo run --example pagerank
 ```
 
 ## Acknowledgments
