@@ -146,6 +146,10 @@ impl Column {
             Some(column_name) => col(&Self::alias(&Column::Msg, column_name)),
         }
     }
+
+    pub fn as_ptr(&self) -> PlSmallStr {
+        self.as_ref().into()
+    }
 }
 
 /// This defines a struct `SendMessage` in Rust. It has two properties:
