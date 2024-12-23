@@ -1,3 +1,4 @@
+use polars::lazy::dsl::max_horizontal;
 use polars::prelude::*;
 use pregel_rs::graph_frame::GraphFrame;
 use pregel_rs::pregel::Column::{Custom, Object, Subject, VertexId};
@@ -32,10 +33,10 @@ fn main() -> Result<(), Box<dyn Error>> {
             Column::subject(Custom("max_value")),
         )
         .aggregate_messages(Column::msg(None).max())
-        .v_prog(max_exprs([
+        .v_prog(max_horizontal([
             col(Custom("max_value").as_ref()),
             Column::msg(None),
-        ]))
+        ])?)
         .build();
 
     Ok(println!("{}", pregel.run()?))

@@ -644,6 +644,7 @@ impl<'a> PregelBuilder<'a> {
     ///
     /// ```rust
     /// use polars::prelude::*;
+    /// use polars::lazy::dsl::max_horizontal;
     /// use pregel_rs::graph_frame::GraphFrame;
     /// use pregel_rs::pregel::Column;
     /// use pregel_rs::pregel::Column::{Custom, Object, VertexId, Subject};
@@ -668,7 +669,7 @@ impl<'a> PregelBuilder<'a> {
     ///         .initial_message(col(Custom("value").as_ref()))
     ///         .send_messages(MessageReceiver::Object, Column::subject(Custom("max_value")))
     ///         .aggregate_messages(Column::msg(None).max())
-    ///         .v_prog(max_exprs([col(Custom("max_value").as_ref()), Column::msg(None)]))
+    ///         .v_prog(max_horizontal([col(Custom("max_value").as_ref()), Column::msg(None)])?)
     ///         .build();
     ///
     ///     Ok(println!("{}", pregel.run()?))
@@ -752,7 +753,7 @@ impl<'a> Pregel<'a> {
             .graph
             .edges
             .lazy()
-            .select([all().prefix(&format!("{}.", Column::Edge.as_ref()))]);
+            .select([all().name().prefix(&format!("{}.", Column::Edge.as_ref()))]);
         // We create a DataFrame that contains the vertices of the graph
         let vertices = &self.graph.vertices.lazy();
         // We start the execution of the algorithm from the super-step 0; that is, all the nodes
@@ -786,16 +787,18 @@ impl<'a> Pregel<'a> {
             let current_vertices_df = &current_vertices.lazy();
             let triplets_df = current_vertices_df
                 .to_owned()
-                .select([all().prefix(&format!("{}.", Column::Subject.as_ref()))])
+                .select([all()
+                    .name()
+                    .prefix(&format!("{}.", Column::Subject.as_ref()))])
                 .inner_join(
                     edges.to_owned().select([all()]),
                     Column::subject(Column::VertexId), // src column of the current_vertices DataFrame
                     Column::edge(Column::Subject),     // src column of the edges DataFrame
                 )
                 .inner_join(
-                    current_vertices_df
-                        .to_owned()
-                        .select([all().prefix(&format!("{}.", Column::Object.as_ref()))]),
+                    current_vertices_df.to_owned().select([all()
+                        .name()
+                        .prefix(&format!("{}.", Column::Object.as_ref()))]),
                     Column::edge(Column::Object), // dst column of the resulting DataFrame
                     Column::object(Column::VertexId), // id column of the current_vertices DataFrame
                 );
@@ -826,7 +829,7 @@ impl<'a> Pregel<'a> {
             let aggregate_messages = &mut self.aggregate_messages;
             let message_df = triplets_df.select(send_messages);
             let aggregate_df = message_df
-                .groupby([Column::msg(Some(Column::VertexId))])
+                .group_by([Column::msg(Some(Column::VertexId))])
                 .agg([aggregate_messages().alias(Column::Pregel.as_ref())]);
             // We Compute the new values for the vertices. Note that we have to check for possibly
             // null values after performing the outer join. This is, columns where the join key does
@@ -836,7 +839,7 @@ impl<'a> Pregel<'a> {
             let v_prog = &mut self.v_prog;
             let vertex_columns = current_vertices_df
                 .to_owned()
-                .outer_join(
+                .full_join(
                     aggregate_df,
                     col(Column::VertexId.as_ref()), // id column of the current_vertices DataFrame
                     Column::msg(Some(Column::VertexId)), // msg.id column of the message_df DataFrame
@@ -856,7 +859,7 @@ impl<'a> Pregel<'a> {
                     col(Column::VertexId.as_ref()),
                     col(Column::VertexId.as_ref()),
                 )
-                .with_common_subplan_elimination(false)
+                .with_comm_subplan_elim(false)
                 .collect()?;
 
             iteration += 1; // increment the counter so we now which iteration is being executed
@@ -871,6 +874,7 @@ mod tests {
     use crate::graph_frame::GraphFrame;
     use crate::pregel::Column::VertexId;
     use crate::pregel::{Column, MessageReceiver, Pregel, PregelBuilder, SendMessage};
+    use polars::lazy::dsl::max_horizontal;
     use polars::prelude::*;
     use std::error::Error;
 
@@ -1020,7 +1024,8 @@ mod tests {
             )],
             aggregate_messages: Box::new(|| Column::msg(None).max()),
             v_prog: Box::new(|| {
-                max_exprs([col(Column::Custom("max_value").as_ref()), Column::msg(None)])
+                max_horizontal([col(Column::Custom("max_value").as_ref()), Column::msg(None)])
+                    .unwrap()
             }),
         })
     }
@@ -1118,7 +1123,7 @@ mod tests {
             Err(_) => return Err(String::from("Error running pregel")),
         };
 
-        let sorted_pregel = match pregel.sort(&[VertexId.as_ref()], false) {
+        let sorted_pregel = match pregel.sort([VertexId.as_ref()], Default::default()) {
             Ok(sorted_pregel) => sorted_pregel,
             Err(_) => return Err(String::from("Error sorting the DataFrame")),
         };
@@ -1128,7 +1133,7 @@ mod tests {
             Err(_) => return Err(String::from("Error retrieving the column")),
         };
 
-        let expected = Series::new("aux", [3, 2, 2, 2, 4]);
+        let expected = Series::new("aux".into(), [3, 2, 2, 2, 4]).into();
 
         if ans.eq(&expected) {
             Ok(())
